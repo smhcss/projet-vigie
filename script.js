@@ -13,8 +13,28 @@ const guestChoice=document.querySelector('#guest-choice');
 const choicePanel=document.querySelector('#request-choice');
 const guestForm=document.querySelector('#guest-form');
 const guestDate=guestForm.querySelector('[name="date"]');
+const requestMessage=document.querySelector('#form-message');
+let csrfToken='';
 const localToday=new Date();
 guestDate.min=new Date(localToday.getTime()-localToday.getTimezoneOffset()*60000).toISOString().slice(0,10);
+
+async function initializeSession(){
+  try{
+    const response=await fetch('/api/me');
+    if(!response.ok)return;
+    const result=await response.json();
+    csrfToken=result.csrf||'';
+    if(result.user?.role==='client'){
+      choicePanel.hidden=true;
+      guestForm.hidden=false;
+      guestForm.querySelector('.form-step').innerHTML='DEMANDE CLIENT <b>·</b> CONNECTÉ';
+      guestForm.elements.contactMethod.value=result.user.identifier||'';
+      guestForm.elements.company.value=result.user.company||'';
+      const privacy=guestForm.querySelector('.form-privacy');
+      privacy.textContent='Cette demande sera liée à votre compte et ajoutée à votre historique.';
+    }
+  }catch{/* The static preview remains usable when the local server is stopped. */}
+}
 
 guestChoice.addEventListener('click',()=>{
   choicePanel.hidden=true;
@@ -28,7 +48,7 @@ document.querySelector('#back-choice').addEventListener('click',()=>{
   choicePanel.scrollIntoView({behavior:'smooth',block:'center'});
 });
 
-guestForm.addEventListener('submit',event=>{
+guestForm.addEventListener('submit',async event=>{
   event.preventDefault();
   const method=guestForm.elements.contactMethod.value.trim();
   const isEmail=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(method);
@@ -40,6 +60,16 @@ guestForm.addEventListener('submit',event=>{
     guestForm.elements.contactMethod.focus();
     return;
   }
-  message.textContent='Votre demande invité est prête. Dans cette maquette, elle n’est pas transmise à l’entreprise.';
+  try{
+    if(!csrfToken){const tokenResponse=await fetch('/api/csrf');if(!tokenResponse.ok)throw new Error('');csrfToken=(await tokenResponse.json()).csrf}
+    const response=await fetch('/api/requests',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrfToken},body:JSON.stringify(Object.fromEntries(new FormData(guestForm).entries()))});
+    const result=await response.json();
+    if(!response.ok)throw new Error(result.error||'La demande n’a pas pu être envoyée.');
+    message.textContent=result.historyLinked?`Demande ${result.publicId} envoyée et ajoutée à votre historique.`:`Demande ${result.publicId} envoyée. L’équipe pourra vous joindre au sujet de votre événement.`;
+  }catch(error){
+    message.textContent=error.message||'Le serveur local ne répond pas. Lance le serveur de test pour envoyer cette demande.';
+  }
   message.scrollIntoView({behavior:'smooth',block:'nearest'});
 });
+
+initializeSession();

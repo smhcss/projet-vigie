@@ -6,6 +6,7 @@ const successBox=document.querySelector('#form-success');
 const password=document.querySelector('#password');
 const identifier=document.querySelector('#identifier');
 const company=document.querySelector('#company-name');
+async function getCsrf(){const response=await fetch('/api/csrf');if(!response.ok)throw new Error('Serveur local indisponible.');return (await response.json()).csrf}
 
 function updateView(){
   const signup=currentMode==='signup';
@@ -40,7 +41,7 @@ document.querySelector('#forgot-link').addEventListener('click',event=>{
   successBox.textContent='La réinitialisation sera envoyée à votre courriel ou téléphone une fois le service de comptes activé.';
 });
 
-form.addEventListener('submit',event=>{
+form.addEventListener('submit',async event=>{
   event.preventDefault();errorBox.textContent='';successBox.textContent='';
   if(!form.reportValidity())return;
   const value=identifier.value.trim();
@@ -49,7 +50,20 @@ form.addEventListener('submit',event=>{
   const isPhone=digits.length>=8&&digits.length<=15;
   if(!isEmail&&!isPhone){errorBox.textContent='Entrez un courriel valide ou un numéro de téléphone avec son indicatif régional.';identifier.focus();return}
   if(currentMode==='signup'&&password.value!==document.querySelector('#password-confirm').value){errorBox.textContent='Les deux mots de passe ne correspondent pas.';document.querySelector('#password-confirm').focus();return}
-  successBox.textContent=currentMode==='signup'?'Les champs sont valides. La création du compte sera activée lorsque le serveur sécurisé sera connecté.':'La connexion sera activée lorsque le serveur de comptes sera connecté.';
+  try{
+    const token=await getCsrf();
+    const endpoint=currentMode==='signup'?'/api/signup':'/api/login';
+    const payload={identifier:value,password:password.value};
+    if(currentMode==='signup')payload.company=company.value.trim();
+    const response=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':token},body:JSON.stringify(payload)});
+    const result=await response.json();
+    if(!response.ok)throw new Error(result.error||'La demande n’a pas abouti.');
+    if(result.user?.role!=='client'){
+      await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':token},body:'{}'});
+      throw new Error('Cette page est réservée aux clients.');
+    }
+    location.href='/#demande';
+  }catch(error){errorBox.textContent=error.message||'Impossible de joindre le serveur local.'}
 });
 
 updateView();
