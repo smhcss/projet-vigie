@@ -1,0 +1,39 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      VIGIE_HOST: 0.0.0.0
+      VIGIE_PORT: 8765
+      VIGIE_DATA_DIR: /data
+      VIGIE_DB_FILENAME: vigie-staging.sqlite3
+      VIGIE_COOKIE_SECURE: "1"
+      VIGIE_PUBLIC_ORIGIN: https://${VIGIE_DOMAIN}
+    volumes:
+      - vigie_staging_data:/data
+    networks:
+      - private
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    environment:
+      VIGIE_DOMAIN: ${VIGIE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - private
+networks:
+  private:
+    internal: false
+volumes:
+  vigie_staging_data:
+  caddy_data:
+  caddy_config:

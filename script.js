@@ -25,6 +25,8 @@ async function initializeSession(){
     const result=await response.json();
     csrfToken=result.csrf||'';
     if(result.user?.role==='client'){
+      const accountLink=document.querySelector('#account-link');
+      if(accountLink){accountLink.href='client.html';accountLink.textContent='Mon compte'}
       choicePanel.hidden=true;
       guestForm.hidden=false;
       guestForm.querySelector('.form-step').innerHTML='DEMANDE CLIENT <b>·</b> CONNECTÉ';

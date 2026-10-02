@@ -1,1 +1,4 @@
-.DS_Store
+.env
+.vigie-test.sqlite3*
+__pycache__/
+*.pyc

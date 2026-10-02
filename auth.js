@@ -62,7 +62,7 @@ form.addEventListener('submit',async event=>{
       await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':token},body:'{}'});
       throw new Error('Cette page est réservée aux clients.');
     }
-    location.href='/#demande';
+    location.href='/client.html';
   }catch(error){errorBox.textContent=error.message||'Impossible de joindre le serveur local.'}
 });
 

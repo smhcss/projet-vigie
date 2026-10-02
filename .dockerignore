@@ -1,0 +1,7 @@
+.env
+.git
+.vigie-test.sqlite3*
+vigie-staging.sqlite3*
+__pycache__/
+*.pyc
+vigie-site-source.zip

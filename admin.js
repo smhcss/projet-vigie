@@ -5,7 +5,9 @@ let toastTimer;
 const list=document.querySelector('#request-list');
 const detailDialog=document.querySelector('#request-dialog');
 const assignDialog=document.querySelector('#assign-dialog');
-const labels={pending:'À examiner',review:'En traitement',approved:'Approuvée',assigned:'Agents coordonnés'};
+const rejectDialog=document.querySelector('#reject-dialog');
+const rejectForm=document.querySelector('#reject-form');
+const labels={pending:'À examiner',review:'En traitement',approved:'Approuvée',assigned:'Agents coordonnés',rejected:'Refusée'};
 
 async function api(path,options={}){
   const headers={...(options.headers||{})};
@@ -45,7 +47,7 @@ function render(){
 }
 function renderUpcoming(){
   const now=new Date();now.setHours(0,0,0,0);
-  const upcoming=requests.filter(item=>new Date(`${item.event_date}T12:00:00`)>=now).sort((a,b)=>a.event_date.localeCompare(b.event_date)).slice(0,4);
+  const upcoming=requests.filter(item=>item.status!=='rejected'&&new Date(`${item.event_date}T12:00:00`)>=now).sort((a,b)=>a.event_date.localeCompare(b.event_date)).slice(0,4);
   document.querySelector('#upcoming-list').innerHTML=upcoming.map(item=>{
     const date=new Date(`${item.event_date}T12:00:00`);
     const day=date.toLocaleDateString('fr-CA',{day:'2-digit'});const month=date.toLocaleDateString('fr-CA',{month:'short'}).replace('.','').toUpperCase();
@@ -59,17 +61,17 @@ async function loadRequests(){
 function showRequest(id){
   activeRequest=requests.find(item=>item.id===Number(id));if(!activeRequest)return;
   document.querySelector('#detail-title').textContent=activeRequest.event_type;
-  document.querySelector('#detail-content').innerHTML=`<div class="detail-grid"><div class="detail-item"><small>Entreprise cliente</small><b>${esc(activeRequest.company)}</b></div><div class="detail-item"><small>Responsable</small><b>${esc(activeRequest.contact)}</b></div><div class="detail-item"><small>Courriel / téléphone</small><b>${esc(activeRequest.contact_method)}</b></div><div class="detail-item"><small>Type d’agent</small><b>${esc(activeRequest.agent_type)}</b></div><div class="detail-item"><small>Date de l’événement</small><b>${esc(formatDate(activeRequest.event_date))}</b></div><div class="detail-item"><small>Effectif demandé</small><b>${Number(activeRequest.agents)} agents</b></div><div class="detail-item"><small>Lieu</small><b>${esc(activeRequest.location)}</b></div><div class="detail-item"><small>Statut</small><b><span class="status status-${activeRequest.status}">${labels[activeRequest.status]}</span></b></div>${activeRequest.team?`<div class="detail-item"><small>Équipe responsable</small><b>${esc(activeRequest.team)}</b></div>`:''}</div><div class="detail-notes"><small>DÉTAILS DU CLIENT</small><p>${esc(activeRequest.details||'Aucun détail supplémentaire fourni.')}</p></div>${activeRequest.coordination_note?`<div class="detail-notes"><small>NOTE DE COORDINATION</small><p>${esc(activeRequest.coordination_note)}</p></div>`:''}`;
+  document.querySelector('#detail-content').innerHTML=`<div class="detail-grid"><div class="detail-item"><small>Entreprise cliente</small><b>${esc(activeRequest.company)}</b></div><div class="detail-item"><small>Responsable</small><b>${esc(activeRequest.contact)}</b></div><div class="detail-item"><small>Courriel / téléphone</small><b>${esc(activeRequest.contact_method)}</b></div><div class="detail-item"><small>Type d’agent</small><b>${esc(activeRequest.agent_type)}</b></div><div class="detail-item"><small>Date de l’événement</small><b>${esc(formatDate(activeRequest.event_date))}</b></div><div class="detail-item"><small>Effectif demandé</small><b>${Number(activeRequest.agents)} agents</b></div><div class="detail-item"><small>Lieu</small><b>${esc(activeRequest.location)}</b></div><div class="detail-item"><small>Statut</small><b><span class="status status-${activeRequest.status}">${labels[activeRequest.status]}</span></b></div>${activeRequest.team?`<div class="detail-item"><small>Équipe responsable</small><b>${esc(activeRequest.team)}</b></div>`:''}</div><div class="detail-notes"><small>DÉTAILS DU CLIENT</small><p>${esc(activeRequest.details||'Aucun détail supplémentaire fourni.')}</p></div>${activeRequest.coordination_note?`<div class="detail-notes"><small>NOTE DE COORDINATION</small><p>${esc(activeRequest.coordination_note)}</p></div>`:''}${activeRequest.rejection_reason?`<div class="detail-notes rejection-notes"><small>MOTIF DU REFUS</small><p>${esc(activeRequest.rejection_reason)}</p></div>`:''}`;
   const actions=document.querySelector('#detail-actions');
   if(activeRequest.status==='pending')actions.innerHTML='<button class="action-secondary" data-dialog-close>Fermer</button><button class="action-primary" data-action="take">Prendre en charge <span>→</span></button>';
-  else if(activeRequest.status==='review')actions.innerHTML='<button class="action-secondary" data-dialog-close>Fermer</button><button class="action-approve" data-action="approve">Approuver la demande <span>✓</span></button>';
+  else if(activeRequest.status==='review')actions.innerHTML='<button class="action-secondary" data-dialog-close>Fermer</button><button class="action-danger" data-action="reject">Refuser</button><button class="action-approve" data-action="approve">Approuver la demande <span>✓</span></button>';
   else if(activeRequest.status==='approved')actions.innerHTML='<button class="action-secondary" data-dialog-close>Fermer</button><button class="action-primary" data-action="assign">Coordonner les agents <span>→</span></button>';
-  else actions.innerHTML='<button class="action-secondary" data-dialog-close>Fermer</button><span class="status status-assigned">Agents coordonnés</span>';
+  else actions.innerHTML=`<button class="action-secondary" data-dialog-close>Fermer</button><span class="status status-${activeRequest.status}">${labels[activeRequest.status]}</span>`;
   detailDialog.showModal();
 }
 async function transition(action,extra={}){
-  try{await api(`/api/admin/requests/${activeRequest.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...extra})});detailDialog.close();toast(action==='take'?'Demande prise en charge.':action==='approve'?'Demande approuvée.':'Coordination enregistrée.');await loadRequests()}
-  catch(error){toast(error.message)}
+  try{await api(`/api/admin/requests/${activeRequest.id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...extra})});if(action==='reject')rejectDialog.close();else detailDialog.close();toast(action==='take'?'Demande prise en charge.':action==='approve'?'Demande approuvée.':action==='reject'?'Demande refusée.':'Coordination enregistrée.');await loadRequests();return true}
+  catch(error){toast(error.message);return false}
 }
 list.addEventListener('click',event=>{const button=event.target.closest('[data-view]');if(button)showRequest(button.dataset.view)});
 document.querySelector('#request-search').addEventListener('input',render);
@@ -80,9 +82,14 @@ document.querySelector('#detail-actions').addEventListener('click',event=>{
   if(action==='assign'){
     detailDialog.close();document.querySelector('#assign-summary').textContent=`${activeRequest.company} · ${activeRequest.event_type} · ${activeRequest.agents} agents · ${formatDate(activeRequest.event_date)}`;
     document.querySelector('#assign-form').dataset.requestId=activeRequest.id;assignDialog.showModal();
+  }else if(action==='reject'){
+    document.querySelector('#reject-summary').textContent=`${activeRequest.company} · ${activeRequest.event_type} · ${formatDate(activeRequest.event_date)}`;
+    document.querySelector('#rejection-reason').value='';
+    detailDialog.close();rejectDialog.showModal();document.querySelector('#rejection-reason').focus();
   }else transition(action);
 });
 document.querySelector('#assign-form').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget;const data=new FormData(form);transition('assign',{team:data.get('team'),note:data.get('note')});form.reset();assignDialog.close()});
+rejectForm.addEventListener('submit',async event=>{event.preventDefault();if(!rejectForm.reportValidity())return;const reason=new FormData(rejectForm).get('reason');if(await transition('reject',{reason}))rejectForm.reset()});
 document.querySelectorAll('[data-close]').forEach(button=>button.addEventListener('click',()=>button.closest('dialog').close()));
 document.querySelector('#refresh-requests').addEventListener('click',loadRequests);
 document.querySelector('#today-label').textContent=new Date().toLocaleDateString('fr-CA',{weekday:'short',day:'numeric',month:'short'});

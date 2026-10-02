@@ -19,10 +19,14 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / ".vigie-test.sqlite3"
+DATA_DIR = Path(os.environ.get("VIGIE_DATA_DIR", str(ROOT))).expanduser()
+DB_PATH = DATA_DIR / os.environ.get("VIGIE_DB_FILENAME", ".vigie-test.sqlite3")
 os.umask(0o077)
-HOST = "127.0.0.1"
-PORT = int(os.environ.get("VIGIE_TEST_PORT", "8765"))
+HOST = os.environ.get("VIGIE_HOST", "127.0.0.1")
+PORT = int(os.environ.get("VIGIE_PORT", os.environ.get("VIGIE_TEST_PORT", "8765")))
+PUBLIC_ORIGIN = os.environ.get("VIGIE_PUBLIC_ORIGIN", f"http://127.0.0.1:{PORT}").rstrip("/")
+COOKIE_SECURE = os.environ.get("VIGIE_COOKIE_SECURE", "0") == "1"
+ALLOW_TRYCLOUDFLARE_ORIGIN = os.environ.get("VIGIE_ALLOW_TRYCLOUDFLARE_ORIGIN", "0") == "1"
 PBKDF2_ROUNDS = 310_000
 SESSION_SECONDS = 60 * 60 * 8
 SETUP_SECONDS = 60 * 60 * 24
@@ -44,6 +48,7 @@ def connect():
 
 
 def init_db():
+    DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     with connect() as db:
         db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
@@ -64,6 +69,7 @@ def init_db():
           event_date TEXT NOT NULL, agents INTEGER NOT NULL, location TEXT NOT NULL,
           details TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
           team TEXT NOT NULL DEFAULT '', coordination_note TEXT NOT NULL DEFAULT '',
+          rejection_reason TEXT NOT NULL DEFAULT '',
           created_at INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS setup_tokens (
@@ -72,6 +78,9 @@ def init_db():
         CREATE INDEX IF NOT EXISTS requests_status_idx ON requests(status);
         CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
         """)
+        request_columns = {row["name"] for row in db.execute("PRAGMA table_info(requests)")}
+        if "rejection_reason" not in request_columns:
+            db.execute("ALTER TABLE requests ADD COLUMN rejection_reason TEXT NOT NULL DEFAULT ''")
     try:
         DB_PATH.chmod(0o600)
     except OSError:
@@ -108,7 +117,7 @@ def create_admin_setup_link():
         token = secrets.token_urlsafe(32)
         db.execute("INSERT INTO setup_tokens(token_hash, expires_at) VALUES(?,?)",
                    (token_hash(token), int(time.time()) + SETUP_SECONDS))
-    print(f"Lien d’activation unique (valide 24 h) : http://{HOST}:{PORT}/admin-setup.html?token={token}")
+    print(f"Lien d’activation unique (valide 24 h) : {PUBLIC_ORIGIN}/admin-setup.html?token={token}")
     print("Transmets ce lien au propriétaire de l’entreprise par un canal privé.")
 
 
@@ -172,11 +181,18 @@ class Handler(SimpleHTTPRequestHandler):
         cookie_token = self.csrf_cookie()
         header_token = self.headers.get("X-CSRF-Token", "")
         origin = self.headers.get("Origin")
-        expected = f"http://{HOST}:{PORT}"
+        expected = PUBLIC_ORIGIN
         if not cookie_token or not hmac.compare_digest(cookie_token, header_token):
             self.send_json(403, {"error": "Jeton de sécurité invalide. Recharge la page et réessaie."})
             return False
-        if origin and origin != expected:
+        origin_allowed = not origin or origin == expected
+        if origin and not origin_allowed and ALLOW_TRYCLOUDFLARE_ORIGIN:
+            parsed_origin = urlparse(origin)
+            hostname = parsed_origin.hostname or ""
+            origin_allowed = (parsed_origin.scheme == "https" and
+                              parsed_origin.netloc == hostname and
+                              re.fullmatch(r"[a-z0-9-]+\.trycloudflare\.com", hostname) is not None)
+        if not origin_allowed:
             self.send_json(403, {"error": "Origine de requête refusée."})
             return False
         return True
@@ -212,20 +228,28 @@ class Handler(SimpleHTTPRequestHandler):
         with connect() as db:
             db.execute("INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)",
                        (token_hash(raw), user_id, expires))
-        cookie = f"vigie_session={raw}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_SECONDS}"
-        return cookie
+        return self.cookie_string("vigie_session", raw, http_only=True, max_age=SESSION_SECONDS)
+
+    @staticmethod
+    def cookie_string(name, value, http_only, max_age):
+        parts = [f"{name}={value}", "Path=/", "SameSite=Strict", f"Max-Age={max_age}"]
+        if http_only:
+            parts.append("HttpOnly")
+        if COOKIE_SECURE:
+            parts.append("Secure")
+        return "; ".join(parts)
 
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/api/csrf":
             csrf = self.csrf_cookie() or secrets.token_urlsafe(32)
-            cookie = f"vigie_csrf={csrf}; Path=/; SameSite=Strict; Max-Age={SESSION_SECONDS}"
+            cookie = self.cookie_string("vigie_csrf", csrf, http_only=False, max_age=SESSION_SECONDS)
             self.send_json(200, {"csrf": csrf}, (cookie,))
             return
         if path == "/api/me":
             user = self.current_user()
             csrf = self.csrf_cookie() or secrets.token_urlsafe(32)
-            cookie = f"vigie_csrf={csrf}; Path=/; SameSite=Strict; Max-Age={SESSION_SECONDS}"
+            cookie = self.cookie_string("vigie_csrf", csrf, http_only=False, max_age=SESSION_SECONDS)
             self.send_json(200, {"user": safe_user(user), "csrf": csrf}, (cookie,))
             return
         if path == "/api/client/requests":
@@ -288,10 +312,14 @@ class Handler(SimpleHTTPRequestHandler):
             data = self.read_json()
             request_id = int(match.group(1))
             action = data.get("action")
-            transitions = {"take": ("pending", "review"), "approve": ("review", "approved"), "assign": ("approved", "assigned")}
+            transitions = {"take": ("pending", "review"), "approve": ("review", "approved"),
+                           "reject": ("review", "rejected"), "assign": ("approved", "assigned")}
             if action not in transitions:
                 raise ValueError("Action de suivi invalide.")
             before, after = transitions[action]
+            reason = (data.get("reason") or "").strip()[:1000] if action == "reject" else ""
+            if action == "reject" and len(reason) < 5:
+                raise ValueError("Indique un motif de refus d’au moins 5 caractères.")
             with connect() as db:
                 row = db.execute("SELECT id FROM requests WHERE id=? AND status=?", (request_id, before)).fetchone()
                 if not row:
@@ -303,6 +331,9 @@ class Handler(SimpleHTTPRequestHandler):
                         raise ValueError("Indique l’équipe ou le responsable de la coordination.")
                     db.execute("UPDATE requests SET status=?,team=?,coordination_note=? WHERE id=?",
                                (after, team, (data.get("note") or "").strip()[:1000], request_id))
+                elif action == "reject":
+                    db.execute("UPDATE requests SET status=?,rejection_reason=? WHERE id=?",
+                               (after, reason, request_id))
                 else:
                     db.execute("UPDATE requests SET status=? WHERE id=?", (after, request_id))
             self.send_json(200, {"ok": True, "status": after})
@@ -328,7 +359,8 @@ class Handler(SimpleHTTPRequestHandler):
     def login(self, data):
         identifier, _ = normalize_identifier(data.get("identifier", ""))
         password = data.get("password") or ""
-        key = (self.client_address[0], identifier)
+        client_ip = self.headers.get("X-Forwarded-For", self.client_address[0]).split(",", 1)[0].strip()
+        key = (client_ip, identifier)
         now = time.time()
         recent = [stamp for stamp in self.login_attempts.get(key, []) if now - stamp < 900]
         if len(recent) >= 8:
@@ -356,7 +388,7 @@ class Handler(SimpleHTTPRequestHandler):
         if cookie:
             with connect() as db:
                 db.execute("DELETE FROM sessions WHERE token_hash=?", (token_hash(cookie.value),))
-        self.send_json(200, {"ok": True}, ("vigie_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0",))
+        self.send_json(200, {"ok": True}, (self.cookie_string("vigie_session", "", http_only=True, max_age=0),))
 
     def create_request(self, data):
         user = self.current_user()
