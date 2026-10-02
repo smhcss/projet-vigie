@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101d29">
+  <title>Vigie — Sécurité événementielle</title>
+  <meta name="description" content="Demandez les agents de sécurité qu’il vous faut pour votre événement. Une équipe dédiée étudie chaque demande.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#accueil" aria-label="Vigie, accueil"><span class="brand-mark">V</span><span>vigie<span class="brand-period">.</span></span></a>
+    <nav class="main-nav" aria-label="Navigation principale"><a href="#services">Nos services</a><a href="#fonctionnement">Fonctionnement</a><a href="#gestion">Espace entreprise</a></nav>
+    <div class="header-actions"><a class="login-button" href="auth.html?role=client&amp;mode=login">Connexion</a><a class="header-cta" href="#demande">Faire une demande <span>↗</span></a></div>
+    <button class="menu-toggle" aria-label="Ouvrir le menu" aria-expanded="false">☰</button>
+  </header>
+
+  <main id="accueil">
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="live-dot"></span> SÉCURITÉ ÉVÉNEMENTIELLE
+        </div>
+        <h1>Le bon renfort.<br><em>Au bon moment.</em></h1>
+        <p class="hero-subtitle">Organisez votre événement en toute confiance. Décrivez vos besoins, et notre équipe prépare le dispositif adapté.</p>
+        <div class="hero-actions"><a class="primary-button" href="#demande">Faire une demande <span>→</span></a><a class="secondary-button" href="#fonctionnement"><span class="play-icon">▶</span> Comment ça marche</a></div>
+        <div class="hero-proof"><div class="proof-icon">✳</div><p><strong>Une équipe qui vous accompagne</strong><span>De la demande à la coordination des agents</span></p></div>
+      </div>
+      <div class="hero-visual" aria-label="Illustration d’un agent de sécurité lors d’un événement">
+        <div class="visual-grid"></div><div class="visual-glow"></div>
+        <div class="scene-building"><span></span><i></i><b></b></div>
+        <div class="scene-person"><div class="person-head"></div><div class="person-body"><i></i><b></b></div><div class="person-legs"></div></div>
+        <div class="visual-status"><span class="status-pulse"></span><div><small>DISPONIBILITÉ</small><strong>Demande prise en charge</strong></div><span class="status-arrow">↗</span></div>
+        <div class="visual-count"><strong>24<span>/7</span></strong><small>Une présence<br>à vos côtés</small></div>
+        <span class="visual-cross cross-one">✳</span><span class="visual-cross cross-two">✳</span>
+      </div>
+    </section>
+
+    <section class="trust-strip"><span>UN ACCOMPAGNEMENT CLAIR À CHAQUE ÉTAPE</span><div class="trust-items"><span><i>✓</i> Besoin étudié par notre équipe</span><span><i>✓</i> Dispositif adapté à votre événement</span><span><i>✓</i> Coordination avec un interlocuteur dédié</span></div></section>
+
+    <section class="services section-wrap" id="services">
+      <div class="section-heading"><div><span class="eyebrow dark-eyebrow">UNE PROTECTION ADAPTÉE À VOTRE PROJET</span><h2>Chaque événement<br>a ses exigences.</h2></div><p>Indiquez-nous le type d’événement, le lieu et le nombre d’agents souhaité. Nous étudions votre demande et revenons vers vous.</p></div>
+      <div class="service-grid">
+        <article class="service-card service-event"><span class="service-number">01 / ÉVÉNEMENTS</span><div class="service-illustration event-illo"><span class="event-sun"></span><span class="event-stage"></span><i class="silhouette s1"></i><i class="silhouette s2"></i><i class="silhouette s3"></i></div><div class="service-bottom"><div><h3>Événements & rassemblements</h3><p>Concerts, festivals, événements privés et corporatifs.</p></div><a href="#demande" aria-label="Demander des agents pour un événement">↗</a></div></article>
+        <article class="service-card service-site"><span class="service-number">02 / SITES</span><div class="service-illustration site-illo"><span class="site-building"></span><span class="site-light"></span><i class="silhouette s4"></i></div><div class="service-bottom"><div><h3>Surveillance de sites</h3><p>Une présence planifiée selon vos lieux et horaires.</p></div><a href="#demande" aria-label="Demander des agents pour un site">↗</a></div></article>
+        <article class="service-card service-access"><span class="service-number">03 / ACCÈS</span><div class="service-illustration access-illo"><span class="access-door"></span><span class="access-line"></span><i class="silhouette s5"></i></div><div class="service-bottom"><div><h3>Contrôle d’accès</h3><p>Accueil, vérification et gestion des entrées.</p></div><a href="#demande" aria-label="Demander des agents pour le contrôle d’accès">↗</a></div></article>
+      </div>
+    </section>
+
+    <section class="workflow" id="fonctionnement"><div class="workflow-inner"><div class="workflow-copy"><span class="eyebrow">UN PARCOURS SIMPLE ET ENCADRÉ</span><h2>Votre demande.<br>Notre <em>coordination.</em></h2><p>Vous gardez une vue claire sur la demande pendant que notre équipe organise la suite.</p><a href="#demande" class="outline-button">Décrire mon besoin <span>→</span></a></div><div class="flow-steps"><article><span class="flow-icon">01</span><div><h3>Choisissez comment continuer</h3><p>Créez un compte client ou envoyez une première demande comme invité.</p></div><span class="flow-check">✓</span></article><article><span class="flow-icon">02</span><div><h3>Décrivez votre besoin</h3><p>Ajoutez la date, le lieu, le nombre d’agents et les détails utiles.</p></div><span class="flow-check">✓</span></article><article><span class="flow-icon">03</span><div><h3>Notre administrateur l’étudie</h3><p>L’équipe examine les informations et confirme les prochaines étapes.</p></div><span class="flow-check">✓</span></article><article><span class="flow-icon">04</span><div><h3>Les agents sont coordonnés</h3><p>Après approbation, l’administrateur organise l’affectation pour votre événement.</p></div><span class="flow-check">✓</span></article></div></div></section>
+
+    <section class="request-area section-wrap" id="demande"><div class="request-intro"><span class="eyebrow dark-eyebrow">PARLONS DE VOTRE ÉVÉNEMENT</span><h2>Besoin d’un<br>agent de sécurité ?</h2><p>Choisissez comment vous souhaitez nous transmettre les détails de votre événement.</p><div class="request-note"><span>i</span><p>Dans les deux cas, notre équipe examinera votre demande avant de confirmer l’affectation d’agents.</p></div></div><div class="request-flow"><div class="account-gate" id="request-choice"><span class="gate-icon">♙</span><span class="eyebrow dark-eyebrow">COMMENT SOUHAITEZ-VOUS CONTINUER ?</span><h3>Faites votre demande à votre façon.</h3><p>Avec un compte client, vous pourrez conserver et retrouver l’historique de vos demandes. Vous pouvez aussi continuer comme invité.</p><div class="choice-actions"><button type="button" id="guest-choice" class="gate-primary">Continuer comme invité <span>→</span></button><a href="auth.html?role=client&amp;mode=signup" class="gate-secondary">Créer un compte et garder mon historique</a></div><p class="existing-account">Vous avez déjà un compte ? <a href="auth.html?role=client&amp;mode=login">Connectez-vous</a></p></div><form class="request-form guest-form" id="guest-form" hidden><div class="form-heading"><span class="form-step">DEMANDE INVITÉ <b>·</b> SANS COMPTE</span><button class="back-choice" id="back-choice" type="button">← Retour</button></div><div class="form-row"><label>Nom de l’entreprise<input name="company" placeholder="Votre entreprise" required></label><label>Votre nom<input name="contact" placeholder="Nom du responsable" required></label></div><div class="form-row"><label>Votre courriel ou téléphone<input name="contactMethod" placeholder="nom@entreprise.com ou (514) 555-0100" required></label><label>Type d’événement<select name="eventType" required><option value="">Sélectionnez un type</option><option>Événement corporatif</option><option>Concert ou festival</option><option>Événement privé</option><option>Surveillance de site</option><option>Autre besoin</option></select></label></div><div class="form-row"><label>Date de l’événement<input type="date" name="date" required></label><label>Nombre d’agents souhaité<input type="number" name="agents" min="1" placeholder="Ex. 4" required></label></div><label>Lieu de l’événement<input name="location" placeholder="Adresse, ville, code postal" required></label><label>Détails complémentaires<textarea name="details" rows="3" placeholder="Horaires, contexte, besoins particuliers…"></textarea></label><button class="submit-button" type="submit">Envoyer ma demande <span>→</span></button><p class="form-privacy">Votre courriel ou téléphone sert à vous contacter au sujet de cette demande. Pour retrouver un historique, créez un compte.</p><p class="form-message" id="form-message" role="status"></p></form></div></section>
+
+    <section class="admin-preview" id="gestion"><div class="admin-copy"><span class="eyebrow">CÔTÉ ADMINISTRATION</span><h2>Les demandes<br>au même endroit.</h2><p>L’administrateur reçoit les demandes, vérifie les besoins, approuve le service et coordonne l’affectation des agents.</p><ul><li><span>✓</span> Vue centralisée des demandes clients</li><li><span>✓</span> Informations sur l’événement et les effectifs</li><li><span>✓</span> Suivi du traitement et de l’approbation</li></ul></div><div class="dashboard"><div class="dash-top"><div><span class="dash-brand"><b>V</b> vigie <small>ADMIN</small></span></div><span class="dash-avatar">AD</span></div><div class="dash-title"><div><small>ESPACE ADMINISTRATEUR</small><h3>Demandes reçues</h3></div><span class="dash-period">Cette semaine⌄</span></div><div class="dash-stats"><div><small>À examiner</small><strong>03 <i>+1</i></strong></div><div><small>En traitement</small><strong>08</strong></div><div><small>Approuvées</small><strong>14</strong></div></div><div class="table-head"><span>CLIENT / ÉVÉNEMENT</span><span>DATE</span><span>AGENTS</span><span>STATUT</span></div><div class="request-row"><div class="client-cell"><span class="client-avatar av-one">MF</span><span><b>Maison Fête</b><small>Gala corporatif</small></span></div><span>18 oct. 2026</span><span>6 agents</span><span class="status pending">À examiner</span></div><div class="request-row"><div class="client-cell"><span class="client-avatar av-two">NC</span><span><b>Nordik Culture</b><small>Festival musique</small></span></div><span>22 oct. 2026</span><span>12 agents</span><span class="status review">En traitement</span></div><div class="request-row"><div class="client-cell"><span class="client-avatar av-three">GL</span><span><b>Groupe Lavoie</b><small>Surveillance de site</small></span></div><span>25 oct. 2026</span><span>2 agents</span><span class="status approved">Approuvée</span></div><div class="dash-footer"><span>Dernière mise à jour : il y a 12 min</span><a href="admin.html">Ouvrir le panel administrateur →</a></div></div></section>
+
+    <section class="bottom-cta"><div><span class="eyebrow">PRÊT À PLANIFIER VOTRE DISPOSITIF ?</span><h2>Commençons par votre demande.</h2></div><a href="#demande" class="primary-button">Parler à notre équipe <span>→</span></a><span class="cta-decoration">✳</span></section>
+  </main>
+  <footer><a class="brand" href="#accueil"><span class="brand-mark">V</span><span>vigie<span class="brand-period">.</span></span></a><p>Sécurité et coordination, avec vous à chaque étape.</p><span>© 2026 Vigie Sécurité</span></footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
