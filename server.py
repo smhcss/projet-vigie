@@ -13,6 +13,7 @@ import sqlite3
 import sys
 import time
 from contextlib import contextmanager
+from decimal import Decimal, InvalidOperation
 from http.cookies import SimpleCookie
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -30,6 +31,7 @@ ALLOW_TRYCLOUDFLARE_ORIGIN = os.environ.get("VIGIE_ALLOW_TRYCLOUDFLARE_ORIGIN", 
 PBKDF2_ROUNDS = 310_000
 SESSION_SECONDS = 60 * 60 * 8
 SETUP_SECONDS = 60 * 60 * 24
+CURRENCIES = {"CAD": 2, "USD": 2, "EUR": 2, "XOF": 0, "GBP": 2}
 
 
 @contextmanager
@@ -50,6 +52,7 @@ def connect():
 def init_db():
     DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     with connect() as db:
+        categories_table_existed = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_categories'").fetchone() is not None
         db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY, role TEXT NOT NULL CHECK(role IN ('client','admin')),
@@ -67,9 +70,21 @@ def init_db():
           company TEXT NOT NULL, contact TEXT NOT NULL, contact_method TEXT NOT NULL,
           event_type TEXT NOT NULL, agent_type TEXT NOT NULL,
           event_date TEXT NOT NULL, agents INTEGER NOT NULL, location TEXT NOT NULL,
+          billing_duration INTEGER NOT NULL DEFAULT 1,
           details TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
           team TEXT NOT NULL DEFAULT '', coordination_note TEXT NOT NULL DEFAULT '',
           rejection_reason TEXT NOT NULL DEFAULT '',
+          client_confirmed_at INTEGER,
+          invoice_number TEXT, invoice_description TEXT, invoice_quantity INTEGER,
+          invoice_unit_price_minor INTEGER, invoice_currency TEXT, invoice_total_minor INTEGER,
+          invoice_issued_at INTEGER, invoice_paid_at INTEGER,
+          created_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS agent_categories (
+          id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
+          description TEXT NOT NULL DEFAULT '', price_minor INTEGER NOT NULL DEFAULT 0,
+          currency TEXT NOT NULL DEFAULT 'CAD',
+          billing_unit TEXT NOT NULL DEFAULT 'hour', active INTEGER NOT NULL DEFAULT 1,
           created_at INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS setup_tokens (
@@ -81,6 +96,30 @@ def init_db():
         request_columns = {row["name"] for row in db.execute("PRAGMA table_info(requests)")}
         if "rejection_reason" not in request_columns:
             db.execute("ALTER TABLE requests ADD COLUMN rejection_reason TEXT NOT NULL DEFAULT ''")
+        if "billing_duration" not in request_columns:
+            db.execute("ALTER TABLE requests ADD COLUMN billing_duration INTEGER NOT NULL DEFAULT 1")
+        for column, definition in {
+            "client_confirmed_at": "INTEGER", "invoice_number": "TEXT", "invoice_description": "TEXT",
+            "invoice_quantity": "INTEGER", "invoice_unit_price_minor": "INTEGER", "invoice_currency": "TEXT",
+            "invoice_total_minor": "INTEGER", "invoice_issued_at": "INTEGER", "invoice_paid_at": "INTEGER",
+        }.items():
+            if column not in request_columns:
+                db.execute(f"ALTER TABLE requests ADD COLUMN {column} {definition}")
+        category_columns = {row["name"] for row in db.execute("PRAGMA table_info(agent_categories)")}
+        if "price_minor" not in category_columns:
+            db.execute("ALTER TABLE agent_categories ADD COLUMN price_minor INTEGER NOT NULL DEFAULT 0")
+            if "price_cents" in category_columns:
+                db.execute("UPDATE agent_categories SET price_minor=price_cents")
+        if "currency" not in category_columns:
+            db.execute("ALTER TABLE agent_categories ADD COLUMN currency TEXT NOT NULL DEFAULT 'CAD'")
+        if not categories_table_existed:
+            defaults = [
+                ("Agent événementiel", "Accueil et contrôle des accès lors d’événements."),
+                ("Agent de contrôle d’accès", "Vérification des entrées et gestion des accès."),
+                ("Agent de surveillance de site", "Surveillance planifiée de vos lieux et installations."),
+            ]
+            db.executemany("INSERT INTO agent_categories(name,description,created_at) VALUES(?,?,?)",
+                           [(name, description, int(time.time())) for name, description in defaults])
     try:
         DB_PATH.chmod(0o600)
     except OSError:
@@ -125,7 +164,7 @@ def safe_user(row):
     if not row:
         return None
     return {"id": row["id"], "role": row["role"], "identifier": row["display_identifier"],
-            "company": row["company"]}
+            "company": row["company"], "display_name": row["company"] if row["role"] == "admin" else ""}
 
 
 def valid_event_date(value):
@@ -260,6 +299,18 @@ class Handler(SimpleHTTPRequestHandler):
                 rows = db.execute("SELECT * FROM requests WHERE client_id=? ORDER BY created_at DESC", (user["id"],)).fetchall()
             self.send_json(200, {"requests": [dict(row) for row in rows]})
             return
+        if path == "/api/agent-categories":
+            with connect() as db:
+                rows = db.execute("SELECT * FROM agent_categories WHERE active=1 ORDER BY name COLLATE NOCASE").fetchall()
+            self.send_json(200, {"categories": [self.public_category(row) for row in rows]})
+            return
+        if path == "/api/admin/agent-categories":
+            if not self.require_role("admin"):
+                return
+            with connect() as db:
+                rows = db.execute("SELECT * FROM agent_categories ORDER BY name COLLATE NOCASE").fetchall()
+            self.send_json(200, {"categories": [self.public_category(row) for row in rows]})
+            return
         if path == "/api/admin/requests":
             if not self.require_role("admin"):
                 return
@@ -276,7 +327,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/signup", "/api/login", "/api/logout", "/api/requests", "/api/admin/setup"):
+        if path not in ("/api/signup", "/api/login", "/api/logout", "/api/requests", "/api/admin/setup", "/api/admin/agent-categories"):
             self.send_json(404, {"error": "Route introuvable."})
             return
         if not self.secure_mutation():
@@ -293,18 +344,104 @@ class Handler(SimpleHTTPRequestHandler):
                 self.create_request(data)
             elif path == "/api/admin/setup":
                 self.setup_admin(data)
+            elif path == "/api/admin/agent-categories":
+                if not self.require_role("admin"):
+                    return
+                self.create_agent_category(data)
         except ValueError as exc:
             self.send_json(400, {"error": str(exc)})
         except sqlite3.IntegrityError:
-            self.send_json(409, {"error": "Un compte utilise déjà cette adresse courriel ou ce numéro."})
+            message = "Ce type d’agent existe déjà." if path == "/api/admin/agent-categories" else "Un compte utilise déjà cette adresse courriel ou ce numéro."
+            self.send_json(409, {"error": message})
 
     def do_PATCH(self):
         if not self.secure_mutation():
             return
+        path = urlparse(self.path).path
+        if path == "/api/client/account":
+            user = self.require_role("client")
+            if not user:
+                return
+            try:
+                data = self.read_json()
+                company = (data.get("company") or "").strip()[:120]
+                if len(company) < 2:
+                    raise ValueError("Le nom de l’entreprise doit contenir au moins 2 caractères.")
+                identifier, display_identifier = normalize_identifier(data.get("identifier", ""))
+                with connect() as db:
+                    db.execute("UPDATE users SET identifier=?,display_identifier=?,company=? WHERE id=? AND role='client'",
+                               (identifier, display_identifier, company, user["id"]))
+                    updated = db.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
+                self.send_json(200, {"ok": True, "user": safe_user(updated)})
+            except ValueError as exc:
+                self.send_json(400, {"error": str(exc)})
+            except sqlite3.IntegrityError:
+                self.send_json(409, {"error": "Un compte utilise déjà ce courriel ou ce numéro."})
+            return
+        client_request = re.fullmatch(r"/api/client/requests/(\d+)", path)
+        if client_request:
+            user = self.require_role("client")
+            if not user:
+                return
+            try:
+                data = self.read_json()
+                action = data.get("action")
+                if action == "cancel":
+                    with connect() as db:
+                        cursor = db.execute("UPDATE requests SET status='cancelled' WHERE id=? AND client_id=? AND status='pending'",
+                                            (int(client_request.group(1)), user["id"]))
+                        if not cursor.rowcount:
+                            row = db.execute("SELECT status FROM requests WHERE id=? AND client_id=?",
+                                             (int(client_request.group(1)), user["id"])).fetchone()
+                            if not row:
+                                self.send_json(404, {"error": "Cette demande est introuvable."})
+                            else:
+                                self.send_json(409, {"error": "Cette demande a déjà été prise en charge et ne peut plus être annulée ici."})
+                            return
+                    self.send_json(200, {"ok": True, "status": "cancelled"})
+                    return
+                if action != "edit":
+                    raise ValueError("Action de demande invalide.")
+                event_date = (data.get("event_date") or "").strip()
+                location = (data.get("location") or "").strip()[:500]
+                details = (data.get("details") or "").strip()[:3000]
+                try:
+                    agents = int(data.get("agents", 0))
+                except (TypeError, ValueError):
+                    agents = 0
+                if not valid_event_date(event_date) or len(location) < 2:
+                    raise ValueError("Indique une date valide et un lieu d’au moins 2 caractères.")
+                if not 1 <= agents <= 500:
+                    raise ValueError("Le nombre d’agents doit être compris entre 1 et 500.")
+                with connect() as db:
+                    cursor = db.execute("""UPDATE requests SET event_date=?,agents=?,location=?,details=?
+                        WHERE id=? AND client_id=? AND status='pending'""",
+                        (event_date, agents, location, details, int(client_request.group(1)), user["id"]))
+                    if not cursor.rowcount:
+                        row = db.execute("SELECT status FROM requests WHERE id=? AND client_id=?",
+                                         (int(client_request.group(1)), user["id"])).fetchone()
+                        if not row:
+                            self.send_json(404, {"error": "Cette demande est introuvable."})
+                        else:
+                            self.send_json(409, {"error": "Cette demande a déjà été prise en charge et ne peut plus être modifiée ici."})
+                        return
+                self.send_json(200, {"ok": True, "status": "pending"})
+            except ValueError as exc:
+                self.send_json(400, {"error": str(exc)})
+            return
         user = self.require_role("admin")
         if not user:
             return
-        match = re.fullmatch(r"/api/admin/requests/(\d+)", urlparse(self.path).path)
+        category_match = re.fullmatch(r"/api/admin/agent-categories/(\d+)", path)
+        if category_match:
+            try:
+                self.update_agent_category(int(category_match.group(1)), self.read_json())
+            except ValueError as exc:
+                self.send_json(400, {"error": str(exc)})
+            except sqlite3.IntegrityError:
+                self.send_json(409, {"error": "Ce type d’agent existe déjà."})
+            return
+        match = re.fullmatch(r"/api/admin/requests/(\d+)", path)
         if not match:
             self.send_json(404, {"error": "Route introuvable."})
             return
@@ -312,6 +449,22 @@ class Handler(SimpleHTTPRequestHandler):
             data = self.read_json()
             request_id = int(match.group(1))
             action = data.get("action")
+            if action == "issue-invoice":
+                self.issue_invoice(request_id, data)
+                return
+            if action == "mark-paid":
+                with connect() as db:
+                    row = db.execute("SELECT status,invoice_number,invoice_paid_at FROM requests WHERE id=?", (request_id,)).fetchone()
+                    if not row:
+                        self.send_json(404, {"error": "Cette demande est introuvable."})
+                        return
+                    if not row["invoice_number"] or row["status"] not in ("approved", "assigned"):
+                        self.send_json(409, {"error": "Seule une facture émise pour une demande approuvée peut être marquée payée."})
+                        return
+                    paid_at = row["invoice_paid_at"] or int(time.time() * 1000)
+                    db.execute("UPDATE requests SET invoice_paid_at=? WHERE id=?", (paid_at, request_id))
+                self.send_json(200, {"ok": True, "invoice_paid_at": paid_at})
+                return
             transitions = {"take": ("pending", "review"), "approve": ("review", "approved"),
                            "reject": ("review", "rejected"), "assign": ("approved", "assigned")}
             if action not in transitions:
@@ -321,10 +474,32 @@ class Handler(SimpleHTTPRequestHandler):
             if action == "reject" and len(reason) < 5:
                 raise ValueError("Indique un motif de refus d’au moins 5 caractères.")
             with connect() as db:
-                row = db.execute("SELECT id FROM requests WHERE id=? AND status=?", (request_id, before)).fetchone()
+                row = db.execute("SELECT * FROM requests WHERE id=? AND status=?", (request_id, before)).fetchone()
                 if not row:
                     self.send_json(409, {"error": "Le statut de cette demande a changé. Recharge la liste."})
                     return
+                if action == "approve":
+                    category = db.execute("SELECT * FROM agent_categories WHERE name=?", (row["agent_type"],)).fetchone()
+                    if not category or category["price_minor"] <= 0:
+                        raise ValueError("Configure d’abord un tarif actif pour ce type d’agent dans la liste des services.")
+                    unit = category["billing_unit"]
+                    duration = max(1, int(row["billing_duration"] or 1))
+                    if unit == "event":
+                        quantity = 1
+                        description = f"{row['agent_type']} — événement ({row['agents']} agents)"
+                    else:
+                        quantity = int(row["agents"]) * duration
+                        duration_label = "heure" if unit == "hour" else "jour"
+                        duration_phrase = f"{duration} {duration_label}{'' if duration == 1 else 's'}"
+                        description = f"{row['agent_type']} — {row['agents']} agents × {duration_phrase}"
+                    if quantity > 100_000:
+                        raise ValueError("La quantité calculée dépasse la limite de facturation.")
+                    issued_seconds = int(time.time())
+                    invoice_number = f"VG-{time.strftime('%Y%m%d', time.localtime(issued_seconds))}-{secrets.token_hex(3).upper()}"
+                    db.execute("""UPDATE requests SET invoice_number=?,invoice_description=?,invoice_quantity=?,
+                        invoice_unit_price_minor=?,invoice_currency=?,invoice_total_minor=?,invoice_issued_at=? WHERE id=?""",
+                        (invoice_number, description, quantity, category["price_minor"], category["currency"],
+                         category["price_minor"] * quantity, issued_seconds * 1000, request_id))
                 if action == "assign":
                     team = (data.get("team") or "").strip()[:120]
                     if not team:
@@ -339,6 +514,124 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(200, {"ok": True, "status": after})
         except ValueError as exc:
             self.send_json(400, {"error": str(exc)})
+
+    def issue_invoice(self, request_id, data):
+        description = (data.get("description") or "").strip()[:180]
+        currency = data.get("currency") or "CAD"
+        if len(description) < 2:
+            raise ValueError("Indique une description pour la facture.")
+        if currency not in CURRENCIES:
+            raise ValueError("Choisis une devise prise en charge.")
+        try:
+            quantity = int(data.get("quantity", 0))
+        except (TypeError, ValueError):
+            quantity = 0
+        if quantity < 1 or quantity > 100_000:
+            raise ValueError("La quantité doit être comprise entre 1 et 100 000.")
+        try:
+            unit_price = Decimal(str(data.get("unit_price", "")))
+        except InvalidOperation:
+            raise ValueError("Indique un tarif unitaire valide.") from None
+        if not unit_price.is_finite() or unit_price < 0 or unit_price > 1_000_000:
+            raise ValueError("Le tarif unitaire doit être entre 0 et 1 000 000.")
+        digits = CURRENCIES[currency]
+        quantum = Decimal("1") if digits == 0 else Decimal("0.01")
+        if unit_price != unit_price.quantize(quantum):
+            raise ValueError("Le tarif ne peut pas dépasser les décimales permises par cette devise.")
+        unit_price_minor = int(unit_price * (10 ** digits))
+        total_minor = unit_price_minor * quantity
+        if total_minor > 9_000_000_000_000_000:
+            raise ValueError("Le total de la facture est trop élevé.")
+        issued_seconds = int(time.time())
+        issued_at = issued_seconds * 1000
+        invoice_number = f"VG-{time.strftime('%Y%m%d', time.localtime(issued_seconds))}-{secrets.token_hex(3).upper()}"
+        with connect() as db:
+            row = db.execute("SELECT status,invoice_number FROM requests WHERE id=?", (request_id,)).fetchone()
+            if not row:
+                self.send_json(404, {"error": "Cette demande est introuvable."})
+                return
+            if row["status"] not in ("approved", "assigned"):
+                self.send_json(409, {"error": "Approuve d’abord la demande avant d’émettre la facture."})
+                return
+            if row["invoice_number"]:
+                self.send_json(409, {"error": "Une facture a déjà été émise pour cette demande."})
+                return
+            db.execute("""UPDATE requests SET invoice_number=?,invoice_description=?,invoice_quantity=?,
+                invoice_unit_price_minor=?,invoice_currency=?,invoice_total_minor=?,invoice_issued_at=? WHERE id=?""",
+                (invoice_number, description, quantity, unit_price_minor, currency, total_minor, issued_at, request_id))
+        self.send_json(201, {"ok": True, "invoiceNumber": invoice_number})
+
+    def do_DELETE(self):
+        if not self.secure_mutation():
+            return
+        if not self.require_role("admin"):
+            return
+        match = re.fullmatch(r"/api/admin/agent-categories/(\d+)", urlparse(self.path).path)
+        if not match:
+            self.send_json(404, {"error": "Route introuvable."})
+            return
+        with connect() as db:
+            cursor = db.execute("DELETE FROM agent_categories WHERE id=?", (int(match.group(1)),))
+        if not cursor.rowcount:
+            self.send_json(404, {"error": "Ce type d’agent est introuvable."})
+            return
+        self.send_json(200, {"ok": True})
+
+    @staticmethod
+    def public_category(row):
+        return {"id": row["id"], "name": row["name"], "description": row["description"],
+                "price": row["price_minor"] / (10 ** CURRENCIES.get(row["currency"], 2)) if row["price_minor"] else None,
+                "currency": row["currency"],
+                "billing_unit": row["billing_unit"], "active": bool(row["active"])}
+
+    @staticmethod
+    def category_fields(data):
+        name = (data.get("name") or "").strip()
+        description = (data.get("description") or "").strip()[:180]
+        billing_unit = data.get("billing_unit") or "hour"
+        currency = data.get("currency") or "CAD"
+        if len(name) < 2 or len(name) > 80:
+            raise ValueError("Le nom du type d’agent doit contenir de 2 à 80 caractères.")
+        if billing_unit not in ("hour", "day", "event"):
+            raise ValueError("Choisis une unité de facturation valide.")
+        if currency not in CURRENCIES:
+            raise ValueError("Choisis une devise prise en charge.")
+        price_value = data.get("price")
+        if price_value in (None, ""):
+            price_minor = 0
+        else:
+            try:
+                price = Decimal(str(price_value))
+            except InvalidOperation:
+                raise ValueError("Indique un tarif valide.") from None
+            if not price.is_finite() or price < 0 or price > 1_000_000:
+                raise ValueError("Le tarif doit être entre 0 et 1 000 000 $.")
+            digits = CURRENCIES[currency]
+            quantum = Decimal("1") if digits == 0 else Decimal("0.01")
+            if price != price.quantize(quantum):
+                raise ValueError("Le tarif ne peut pas dépasser les décimales permises par cette devise.")
+            price_minor = int(price * (10 ** digits))
+        active = 1 if data.get("active", True) in (True, 1, "true", "on", "1") else 0
+        return name, description, price_minor, currency, billing_unit, active
+
+    def create_agent_category(self, data):
+        fields = self.category_fields(data)
+        with connect() as db:
+            cursor = db.execute("""INSERT INTO agent_categories(name,description,price_minor,currency,billing_unit,active,created_at)
+                VALUES(?,?,?,?,?,?,?)""", (*fields, int(time.time())))
+            row = db.execute("SELECT * FROM agent_categories WHERE id=?", (cursor.lastrowid,)).fetchone()
+        self.send_json(201, {"ok": True, "category": self.public_category(row)})
+
+    def update_agent_category(self, category_id, data):
+        fields = self.category_fields(data)
+        with connect() as db:
+            cursor = db.execute("""UPDATE agent_categories SET name=?,description=?,price_minor=?,currency=?,billing_unit=?,active=?
+                WHERE id=?""", (*fields, category_id))
+            if not cursor.rowcount:
+                self.send_json(404, {"error": "Ce type d’agent est introuvable."})
+                return
+            row = db.execute("SELECT * FROM agent_categories WHERE id=?", (category_id,)).fetchone()
+        self.send_json(200, {"ok": True, "category": self.public_category(row)})
 
     def signup(self, data):
         identifier, display = normalize_identifier(data.get("identifier", ""))
@@ -409,12 +702,24 @@ class Handler(SimpleHTTPRequestHandler):
             raise ValueError("Complète les champs obligatoires de la demande.")
         if agents < 1 or agents > 500:
             raise ValueError("Le nombre d’agents doit être entre 1 et 500.")
+        with connect() as db:
+            category = db.execute("SELECT billing_unit FROM agent_categories WHERE name=? AND active=1", (agent_type,)).fetchone()
+        if not category:
+            raise ValueError("Choisis un type d’agent actuellement proposé par l’entreprise.")
+        try:
+            billing_duration = int(data.get("duration", 1)) if category["billing_unit"] in ("hour", "day") else 1
+        except (TypeError, ValueError):
+            billing_duration = 0
+        duration_limit = 365 if category["billing_unit"] == "day" else 720
+        if billing_duration < 1 or billing_duration > duration_limit:
+            unit_name = "jours" if category["billing_unit"] == "day" else "heures"
+            raise ValueError(f"La durée doit être comprise entre 1 et {duration_limit} {unit_name}.")
         public_id = "VG-" + secrets.token_hex(3).upper()
         with connect() as db:
-            cursor = db.execute("""INSERT INTO requests(public_id,client_id,company,contact,contact_method,event_type,agent_type,event_date,agents,location,details,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            cursor = db.execute("""INSERT INTO requests(public_id,client_id,company,contact,contact_method,event_type,agent_type,event_date,agents,location,details,billing_duration,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (public_id, user["id"] if user and user["role"] == "client" else None, company, contact, method_display,
-                 event_type, agent_type, event_date, agents, location, details, int(time.time())))
+                 event_type, agent_type, event_date, agents, location, details, billing_duration, int(time.time())))
             request_id = cursor.lastrowid
         self.send_json(201, {"ok": True, "id": request_id, "publicId": public_id,
                              "historyLinked": bool(user and user["role"] == "client")})

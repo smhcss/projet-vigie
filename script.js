@@ -17,6 +17,57 @@ const requestMessage=document.querySelector('#form-message');
 let csrfToken='';
 const localToday=new Date();
 guestDate.min=new Date(localToday.getTime()-localToday.getTimezoneOffset()*60000).toISOString().slice(0,10);
+const agentCatalogKey='vigie-agent-catalog-v1';
+const defaultAgentCategories=[
+  {name:'Agent événementiel',description:'Accueil et contrôle des accès lors d’événements.',price:null,currency:'CAD',billing_unit:'hour',active:true},
+  {name:'Agent de contrôle d’accès',description:'Vérification des entrées et gestion des accès.',price:null,currency:'CAD',billing_unit:'hour',active:true},
+  {name:'Agent de surveillance de site',description:'Surveillance planifiée de vos lieux et installations.',price:null,currency:'CAD',billing_unit:'hour',active:true}
+];
+let availableAgentCategories=[];
+
+function agentPrice(category){
+  if(category.price===null||category.price===undefined||category.price===''||Number(category.price)===0)return'Tarif à confirmer par l’équipe.';
+  const currency=category.currency||'CAD';const digits=currency==='XOF'?0:2;
+  const amount=new Intl.NumberFormat('fr-CA',{style:'currency',currency,minimumFractionDigits:digits,maximumFractionDigits:digits}).format(Number(category.price));
+  const unit={hour:'par heure et par agent',day:'par jour et par agent',event:'par événement'}[category.billing_unit]||'par heure et par agent';
+  return `${amount} ${unit}. Le prix final sera confirmé par l’équipe.`;
+}
+function showAgentCategory(){
+  const selected=availableAgentCategories.find(category=>category.name===guestForm.elements.agentType.value);
+  const durationWrap=document.querySelector('#billing-duration-wrap');
+  const durationInput=guestForm.elements.duration;
+  const isTimed=selected&&['hour','day'].includes(selected.billing_unit);
+  durationWrap.hidden=!isTimed;
+  durationInput.required=Boolean(isTimed);
+  document.querySelector('#billing-duration-unit').textContent=selected?.billing_unit==='day'?'en jours':'en heures';
+  durationInput.max=selected?.billing_unit==='day'?'365':'720';
+  document.querySelector('#agent-type-details').textContent=selected?`${selected.description?`${selected.description} `:''}${agentPrice(selected)}`:'Le tarif final sera confirmé par l’équipe après étude de la demande.';
+}
+async function initializeAgentCategories(){
+  const select=guestForm.elements.agentType;
+  if(!document.querySelector('#agent-type-details')){const note=document.createElement('small');note.id='agent-type-details';note.className='agent-price-note';select.insertAdjacentElement('afterend',note)}
+  let categories=null;
+  const params=new URLSearchParams(location.search);
+  const passedCatalog=params.get('agentCatalog');
+  if(passedCatalog){
+    try{categories=JSON.parse(passedCatalog);if(Array.isArray(categories)){try{localStorage.setItem(agentCatalogKey,JSON.stringify(categories))}catch{}}}catch{categories=null}
+  }
+  if(!Array.isArray(categories)){
+    if(location.protocol!=='file:'){
+      try{const response=await fetch('/api/agent-categories');if(response.ok)categories=(await response.json()).categories}catch{}
+    }
+  }
+  if(!Array.isArray(categories)){
+    try{const saved=localStorage.getItem(agentCatalogKey);if(saved)categories=JSON.parse(saved)}catch{}
+  }
+  availableAgentCategories=(Array.isArray(categories)?categories:defaultAgentCategories).filter(category=>category&&category.active!==false&&typeof category.name==='string');
+  select.replaceChildren(new Option('Sélectionnez un type d’agent',''));
+  availableAgentCategories.forEach(category=>select.add(new Option(category.name,category.name)));
+  if(!availableAgentCategories.length){select.add(new Option('Aucun type disponible pour le moment',''));select.disabled=true}
+  const requestedAgent=params.get('agentType');if(requestedAgent&&availableAgentCategories.some(category=>category.name===requestedAgent))select.value=requestedAgent;
+  select.addEventListener('change',showAgentCategory);
+  showAgentCategory();
+}
 
 async function initializeSession(){
   try{
@@ -75,3 +126,4 @@ guestForm.addEventListener('submit',async event=>{
 });
 
 initializeSession();
+initializeAgentCategories();

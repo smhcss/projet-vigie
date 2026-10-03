@@ -26,6 +26,7 @@
         <p class="account-identifier" id="account-identifier"></p>
       </div>
       <a class="primary-button" href="index.html#demande">Faire une nouvelle demande <span>→</span></a>
+      <button type="button" id="edit-account-open" class="account-edit-button">Modifier mes coordonnées</button>
       <span class="welcome-mark" aria-hidden="true">✳</span>
     </section>
 
@@ -33,6 +34,11 @@
       <article class="summary-card"><span class="summary-icon icon-all">▤</span><div><small>Toutes vos demandes</small><strong id="total-count">0</strong></div></article>
       <article class="summary-card"><span class="summary-icon icon-active">◷</span><div><small>En cours</small><strong id="active-count">0</strong></div></article>
       <article class="summary-card"><span class="summary-icon icon-done">✓</span><div><small>Décision rendue</small><strong id="decided-count">0</strong></div></article>
+    </section>
+
+    <section class="services-section">
+      <div class="section-title"><div><span class="eyebrow">OFFRE DE SERVICES</span><h2>Services proposés</h2><p>Consultez les types d’agents et les tarifs configurés par l’entreprise.</p></div><a class="refresh-button" href="index.html#demande">Parcourir tous les détails ↗</a></div>
+      <div id="client-services" class="client-services" aria-live="polite"><p class="loading-state">Chargement des services…</p></div>
     </section>
 
     <section class="history-section">
@@ -43,6 +49,9 @@
 
     <footer class="client-footer"><span>Vigie Sécurité · Espace client</span><a href="index.html">Retour au site public ↗</a></footer>
   </main>
+  <dialog id="client-account-dialog" class="client-account-dialog" aria-labelledby="account-dialog-title"><div class="account-dialog-head"><div><span class="eyebrow">VOTRE COMPTE</span><h2 id="account-dialog-title">Modifier mes coordonnées</h2></div><button type="button" data-close-account class="account-dialog-close" aria-label="Fermer">×</button></div><p class="account-dialog-copy">Ces coordonnées serviront pour vos prochaines demandes et votre connexion.</p><form id="client-account-form"><label for="client-company-input">Nom de l’entreprise<input id="client-company-input" name="company" minlength="2" maxlength="120" required></label><label for="client-identifier-input">Courriel ou numéro de téléphone<input id="client-identifier-input" name="identifier" autocomplete="username" required></label><p id="account-form-error" class="history-error" role="alert" hidden></p><p id="account-form-success" class="account-form-success" role="status" hidden></p><div class="account-form-actions"><button type="button" data-close-account class="refresh-button">Annuler</button><button type="submit" class="account-save-button">Enregistrer</button></div></form></dialog>
+  <dialog id="edit-request-dialog" class="client-account-dialog edit-request-dialog" aria-labelledby="edit-request-title"><div class="account-dialog-head"><div><span class="eyebrow">DEMANDE EN ATTENTE</span><h2 id="edit-request-title">Modifier ma demande</h2></div><button type="button" data-close-edit-request class="account-dialog-close" aria-label="Fermer">×</button></div><p class="account-dialog-copy">Tu peux ajuster ces détails avant que l’équipe prenne la demande en charge.</p><form id="edit-request-form"><div class="edit-request-grid"><label>Date de l’événement<input name="event_date" type="date" required></label><label>Nombre d’agents<input name="agents" type="number" min="1" max="500" required></label></div><label>Lieu<input name="location" maxlength="500" required></label><label>Détails complémentaires<textarea name="details" rows="4" maxlength="3000"></textarea></label><p id="edit-request-error" class="history-error" role="alert" hidden></p><div class="account-form-actions"><button type="button" data-close-edit-request class="refresh-button">Annuler</button><button type="submit" class="account-save-button">Enregistrer les modifications</button></div></form></dialog>
+  <dialog id="client-invoice-dialog" class="client-invoice-dialog"><div class="invoice-actions"><button type="button" data-close-invoice class="refresh-button">Fermer</button><button type="button" id="client-print-invoice" class="refresh-button">Imprimer / enregistrer en PDF ↗</button></div><article id="client-invoice-paper" class="invoice-paper"></article></dialog>
   <script src="client.js"></script>
 </body>
 </html>
