@@ -29,7 +29,7 @@ PUBLIC_ORIGIN = os.environ.get("VIGIE_PUBLIC_ORIGIN", f"http://127.0.0.1:{PORT}"
 COOKIE_SECURE = os.environ.get("VIGIE_COOKIE_SECURE", "0") == "1"
 ALLOW_TRYCLOUDFLARE_ORIGIN = os.environ.get("VIGIE_ALLOW_TRYCLOUDFLARE_ORIGIN", "0") == "1"
 PBKDF2_ROUNDS = 310_000
-SESSION_SECONDS = 60 * 60 * 8
+SESSION_SECONDS = 60 * 60 * 24 * 30
 SETUP_SECONDS = 60 * 60 * 24
 CURRENCIES = {"CAD": 2, "USD": 2, "EUR": 2, "XOF": 0, "GBP": 2}
 
@@ -52,7 +52,6 @@ def connect():
 def init_db():
     DATA_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     with connect() as db:
-        categories_table_existed = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='agent_categories'").fetchone() is not None
         db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
           id INTEGER PRIMARY KEY, role TEXT NOT NULL CHECK(role IN ('client','admin')),
@@ -70,6 +69,8 @@ def init_db():
           company TEXT NOT NULL, contact TEXT NOT NULL, contact_method TEXT NOT NULL,
           event_type TEXT NOT NULL, agent_type TEXT NOT NULL,
           event_date TEXT NOT NULL, agents INTEGER NOT NULL, location TEXT NOT NULL,
+          request_kind TEXT NOT NULL DEFAULT 'service', event_start_time TEXT NOT NULL DEFAULT '',
+          event_end_time TEXT NOT NULL DEFAULT '',
           billing_duration INTEGER NOT NULL DEFAULT 1,
           details TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'pending',
           team TEXT NOT NULL DEFAULT '', coordination_note TEXT NOT NULL DEFAULT '',
@@ -90,6 +91,7 @@ def init_db():
         CREATE TABLE IF NOT EXISTS setup_tokens (
           token_hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL, used_at INTEGER
         );
+        CREATE TABLE IF NOT EXISTS app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS requests_status_idx ON requests(status);
         CREATE INDEX IF NOT EXISTS sessions_expiry_idx ON sessions(expires_at);
         """)
@@ -98,6 +100,13 @@ def init_db():
             db.execute("ALTER TABLE requests ADD COLUMN rejection_reason TEXT NOT NULL DEFAULT ''")
         if "billing_duration" not in request_columns:
             db.execute("ALTER TABLE requests ADD COLUMN billing_duration INTEGER NOT NULL DEFAULT 1")
+        for column, definition in {
+            "request_kind": "TEXT NOT NULL DEFAULT 'service'",
+            "event_start_time": "TEXT NOT NULL DEFAULT ''",
+            "event_end_time": "TEXT NOT NULL DEFAULT ''",
+        }.items():
+            if column not in request_columns:
+                db.execute(f"ALTER TABLE requests ADD COLUMN {column} {definition}")
         for column, definition in {
             "client_confirmed_at": "INTEGER", "invoice_number": "TEXT", "invoice_description": "TEXT",
             "invoice_quantity": "INTEGER", "invoice_unit_price_minor": "INTEGER", "invoice_currency": "TEXT",
@@ -112,14 +121,15 @@ def init_db():
                 db.execute("UPDATE agent_categories SET price_minor=price_cents")
         if "currency" not in category_columns:
             db.execute("ALTER TABLE agent_categories ADD COLUMN currency TEXT NOT NULL DEFAULT 'CAD'")
-        if not categories_table_existed:
-            defaults = [
+        cleanup_marker = db.execute("SELECT value FROM app_metadata WHERE key='remove_builtin_agent_examples_v1'").fetchone()
+        if not cleanup_marker:
+            old_examples = [
                 ("Agent événementiel", "Accueil et contrôle des accès lors d’événements."),
                 ("Agent de contrôle d’accès", "Vérification des entrées et gestion des accès."),
                 ("Agent de surveillance de site", "Surveillance planifiée de vos lieux et installations."),
             ]
-            db.executemany("INSERT INTO agent_categories(name,description,created_at) VALUES(?,?,?)",
-                           [(name, description, int(time.time())) for name, description in defaults])
+            db.executemany("DELETE FROM agent_categories WHERE name=? AND description=?", old_examples)
+            db.execute("INSERT INTO app_metadata(key,value) VALUES('remove_builtin_agent_examples_v1','done')")
     try:
         DB_PATH.chmod(0o600)
     except OSError:
@@ -480,26 +490,27 @@ class Handler(SimpleHTTPRequestHandler):
                     return
                 if action == "approve":
                     category = db.execute("SELECT * FROM agent_categories WHERE name=?", (row["agent_type"],)).fetchone()
-                    if not category or category["price_minor"] <= 0:
+                    if (not category or category["price_minor"] <= 0) and row["request_kind"] != "custom":
                         raise ValueError("Configure d’abord un tarif actif pour ce type d’agent dans la liste des services.")
-                    unit = category["billing_unit"]
-                    duration = max(1, int(row["billing_duration"] or 1))
-                    if unit == "event":
-                        quantity = 1
-                        description = f"{row['agent_type']} — événement ({row['agents']} agents)"
-                    else:
-                        quantity = int(row["agents"]) * duration
-                        duration_label = "heure" if unit == "hour" else "jour"
-                        duration_phrase = f"{duration} {duration_label}{'' if duration == 1 else 's'}"
-                        description = f"{row['agent_type']} — {row['agents']} agents × {duration_phrase}"
-                    if quantity > 100_000:
-                        raise ValueError("La quantité calculée dépasse la limite de facturation.")
-                    issued_seconds = int(time.time())
-                    invoice_number = f"VG-{time.strftime('%Y%m%d', time.localtime(issued_seconds))}-{secrets.token_hex(3).upper()}"
-                    db.execute("""UPDATE requests SET invoice_number=?,invoice_description=?,invoice_quantity=?,
-                        invoice_unit_price_minor=?,invoice_currency=?,invoice_total_minor=?,invoice_issued_at=? WHERE id=?""",
-                        (invoice_number, description, quantity, category["price_minor"], category["currency"],
-                         category["price_minor"] * quantity, issued_seconds * 1000, request_id))
+                    if category and category["price_minor"] > 0:
+                        unit = category["billing_unit"]
+                        duration = max(1, int(row["billing_duration"] or 1))
+                        if unit == "event":
+                            quantity = 1
+                            description = f"{row['agent_type']} — événement ({row['agents']} agents)"
+                        else:
+                            quantity = int(row["agents"]) * duration
+                            duration_label = "heure" if unit == "hour" else "jour"
+                            duration_phrase = f"{duration} {duration_label}{'' if duration == 1 else 's'}"
+                            description = f"{row['agent_type']} — {row['agents']} agents × {duration_phrase}"
+                        if quantity > 100_000:
+                            raise ValueError("La quantité calculée dépasse la limite de facturation.")
+                        issued_seconds = int(time.time())
+                        invoice_number = f"VG-{time.strftime('%Y%m%d', time.localtime(issued_seconds))}-{secrets.token_hex(3).upper()}"
+                        db.execute("""UPDATE requests SET invoice_number=?,invoice_description=?,invoice_quantity=?,
+                            invoice_unit_price_minor=?,invoice_currency=?,invoice_total_minor=?,invoice_issued_at=? WHERE id=?""",
+                            (invoice_number, description, quantity, category["price_minor"], category["currency"],
+                             category["price_minor"] * quantity, issued_seconds * 1000, request_id))
                 if action == "assign":
                     team = (data.get("team") or "").strip()[:120]
                     if not team:
@@ -685,13 +696,16 @@ class Handler(SimpleHTTPRequestHandler):
 
     def create_request(self, data):
         user = self.current_user()
+        request_kind = "custom" if data.get("requestKind") == "custom" else "service"
         company = (data.get("company") or (user["company"] if user else "")).strip()
         contact = (data.get("contact") or "").strip()
         method = data.get("contactMethod") or (user["display_identifier"] if user else "")
         _, method_display = normalize_identifier(method)
         event_type = (data.get("eventType") or "").strip()
-        agent_type = (data.get("agentType") or "").strip()
+        agent_type = (data.get("agentType") or ("Demande personnalisée" if request_kind == "custom" else "")).strip()[:80]
         event_date = (data.get("date") or "").strip()
+        event_start_time = (data.get("event_start_time") or "").strip()
+        event_end_time = (data.get("event_end_time") or "").strip()
         location = (data.get("location") or "").strip()
         details = (data.get("details") or "").strip()[:3000]
         try:
@@ -700,26 +714,41 @@ class Handler(SimpleHTTPRequestHandler):
             agents = 0
         if len(company) < 2 or len(contact) < 2 or not event_type or not agent_type or not valid_event_date(event_date) or not location:
             raise ValueError("Complète les champs obligatoires de la demande.")
+        if len(event_type) > 120 or len(location) > 500:
+            raise ValueError("Le titre ou le lieu dépasse la longueur permise.")
         if agents < 1 or agents > 500:
             raise ValueError("Le nombre d’agents doit être entre 1 et 500.")
+        if request_kind == "custom":
+            if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", event_start_time) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", event_end_time):
+                raise ValueError("Indique une heure de début et une heure de fin valides.")
+            start_minutes = int(event_start_time[:2]) * 60 + int(event_start_time[3:])
+            end_minutes = int(event_end_time[:2]) * 60 + int(event_end_time[3:])
+            if end_minutes <= start_minutes:
+                raise ValueError("L’heure de fin doit être après l’heure de début.")
+            billing_duration = max(1, (end_minutes - start_minutes + 59) // 60)
+        else:
+            event_start_time = event_end_time = ""
+            billing_duration = 1
         with connect() as db:
             category = db.execute("SELECT billing_unit FROM agent_categories WHERE name=? AND active=1", (agent_type,)).fetchone()
-        if not category:
+        if not category and request_kind != "custom":
             raise ValueError("Choisis un type d’agent actuellement proposé par l’entreprise.")
-        try:
-            billing_duration = int(data.get("duration", 1)) if category["billing_unit"] in ("hour", "day") else 1
-        except (TypeError, ValueError):
-            billing_duration = 0
-        duration_limit = 365 if category["billing_unit"] == "day" else 720
-        if billing_duration < 1 or billing_duration > duration_limit:
-            unit_name = "jours" if category["billing_unit"] == "day" else "heures"
-            raise ValueError(f"La durée doit être comprise entre 1 et {duration_limit} {unit_name}.")
+        if request_kind != "custom":
+            try:
+                billing_duration = int(data.get("duration", 1)) if category["billing_unit"] in ("hour", "day") else 1
+            except (TypeError, ValueError):
+                billing_duration = 0
+            duration_limit = 365 if category["billing_unit"] == "day" else 720
+            if billing_duration < 1 or billing_duration > duration_limit:
+                unit_name = "jours" if category["billing_unit"] == "day" else "heures"
+                raise ValueError(f"La durée doit être comprise entre 1 et {duration_limit} {unit_name}.")
         public_id = "VG-" + secrets.token_hex(3).upper()
         with connect() as db:
-            cursor = db.execute("""INSERT INTO requests(public_id,client_id,company,contact,contact_method,event_type,agent_type,event_date,agents,location,details,billing_duration,created_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            cursor = db.execute("""INSERT INTO requests(public_id,client_id,company,contact,contact_method,event_type,agent_type,event_date,agents,location,details,billing_duration,request_kind,event_start_time,event_end_time,created_at)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (public_id, user["id"] if user and user["role"] == "client" else None, company, contact, method_display,
-                 event_type, agent_type, event_date, agents, location, details, billing_duration, int(time.time())))
+                 event_type, agent_type, event_date, agents, location, details, billing_duration, request_kind,
+                 event_start_time, event_end_time, int(time.time())))
             request_id = cursor.lastrowid
         self.send_json(201, {"ok": True, "id": request_id, "publicId": public_id,
                              "historyLinked": bool(user and user["role"] == "client")})

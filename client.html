@@ -9,16 +9,21 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="client.css">
+  <link rel="stylesheet" href="client.css?v=20261002-custom-request">
 </head>
 <body>
   <header class="client-header">
     <a class="brand" href="index.html" aria-label="Vigie, site public"><span class="brand-mark">V</span><span>vigie<span>.</span></span></a>
-    <nav aria-label="Navigation client"><a href="index.html">Site public</a><a class="new-request" href="index.html#demande">Faire une demande <span>→</span></a><button id="logout-button" type="button">Déconnexion ↗</button></nav>
+    <button id="client-menu-toggle" class="client-menu-toggle" type="button" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="client-nav"><span></span><span></span><span></span></button>
+    <nav id="client-nav" aria-label="Navigation client">
+      <a href="#overview">Vue d’ensemble</a><a href="#services">Services</a><a href="#custom-request">Demande personnalisée</a><a href="#requests">Mes demandes</a>
+      <button id="client-settings-link" class="client-settings-link" type="button">Paramètres</button>
+      <a href="index.html">Site public</a><a class="new-request" href="index.html#demande">Faire une demande <span>→</span></a><button id="logout-button" type="button">Déconnexion ↗</button>
+    </nav>
   </header>
 
   <main class="client-main">
-    <section class="welcome-card">
+    <section class="welcome-card" id="overview">
       <div>
         <span class="eyebrow">ESPACE CLIENT</span>
         <h1>Bonjour, <span id="welcome-company">votre entreprise</span></h1>
@@ -36,22 +41,41 @@
       <article class="summary-card"><span class="summary-icon icon-done">✓</span><div><small>Décision rendue</small><strong id="decided-count">0</strong></div></article>
     </section>
 
-    <section class="services-section">
+    <section class="custom-request-section" id="custom-request">
+      <div class="section-title"><div><span class="eyebrow">BESOIN PARTICULIER</span><h2>Créer une demande personnalisée</h2><p>Décrivez votre besoin, même s’il ne correspond pas à un service affiché.</p></div></div>
+      <form id="custom-request-form" class="custom-request-form">
+        <div class="custom-request-grid">
+          <label class="custom-request-wide">Titre de votre demande<input name="eventType" maxlength="120" required placeholder="Ex. Sécurité pour une soirée de lancement"></label>
+          <label>Type de service souhaité<select name="agentType" id="custom-agent-type"><option value="Demande personnalisée">À définir avec l’équipe</option></select></label>
+          <label>Nombre d’agents<input name="agents" type="number" min="1" max="500" required placeholder="Ex. 3"></label>
+          <label>Date de l’événement<input name="date" type="date" required></label>
+          <label>Heure de début<input name="startTime" type="time" required></label>
+          <label>Heure de fin<input name="endTime" type="time" required></label>
+          <label class="custom-request-wide">Lieu de l’événement<input name="location" maxlength="500" required placeholder="Adresse, ville et code postal"></label>
+          <label class="custom-request-wide">Détails et consignes<textarea name="details" rows="4" maxlength="3000" placeholder="Décrivez le contexte, les tâches attendues, les horaires particuliers ou l’équipement requis."></textarea></label>
+        </div>
+        <p class="custom-request-note">L’équipe étudiera votre besoin et vous confirmera la disponibilité ainsi que le tarif.</p>
+        <p id="custom-request-message" class="custom-request-message" role="status" hidden></p>
+        <button class="primary-button" type="submit">Envoyer ma demande personnalisée <span>→</span></button>
+      </form>
+    </section>
+
+    <section class="services-section" id="services">
       <div class="section-title"><div><span class="eyebrow">OFFRE DE SERVICES</span><h2>Services proposés</h2><p>Consultez les types d’agents et les tarifs configurés par l’entreprise.</p></div><a class="refresh-button" href="index.html#demande">Parcourir tous les détails ↗</a></div>
       <div id="client-services" class="client-services" aria-live="polite"><p class="loading-state">Chargement des services…</p></div>
     </section>
 
-    <section class="history-section">
+    <section class="history-section" id="requests">
       <div class="section-title"><div><span class="eyebrow">VOTRE SUIVI</span><h2>Historique des demandes</h2><p>Les demandes envoyées depuis ce compte apparaissent ici.</p></div><button id="refresh-button" type="button" class="refresh-button">Actualiser ↻</button></div>
       <div id="request-history" class="request-history" aria-live="polite"><p class="loading-state">Chargement de vos demandes…</p></div>
       <div id="history-error" class="history-error" role="alert" hidden></div>
     </section>
 
-    <footer class="client-footer"><span>Vigie Sécurité · Espace client</span><a href="index.html">Retour au site public ↗</a></footer>
+    <footer class="client-footer"><span>Vigie Sécurité · Espace client</span><a id="client-public-link" href="index.html">Retour au site public ↗</a></footer>
   </main>
   <dialog id="client-account-dialog" class="client-account-dialog" aria-labelledby="account-dialog-title"><div class="account-dialog-head"><div><span class="eyebrow">VOTRE COMPTE</span><h2 id="account-dialog-title">Modifier mes coordonnées</h2></div><button type="button" data-close-account class="account-dialog-close" aria-label="Fermer">×</button></div><p class="account-dialog-copy">Ces coordonnées serviront pour vos prochaines demandes et votre connexion.</p><form id="client-account-form"><label for="client-company-input">Nom de l’entreprise<input id="client-company-input" name="company" minlength="2" maxlength="120" required></label><label for="client-identifier-input">Courriel ou numéro de téléphone<input id="client-identifier-input" name="identifier" autocomplete="username" required></label><p id="account-form-error" class="history-error" role="alert" hidden></p><p id="account-form-success" class="account-form-success" role="status" hidden></p><div class="account-form-actions"><button type="button" data-close-account class="refresh-button">Annuler</button><button type="submit" class="account-save-button">Enregistrer</button></div></form></dialog>
   <dialog id="edit-request-dialog" class="client-account-dialog edit-request-dialog" aria-labelledby="edit-request-title"><div class="account-dialog-head"><div><span class="eyebrow">DEMANDE EN ATTENTE</span><h2 id="edit-request-title">Modifier ma demande</h2></div><button type="button" data-close-edit-request class="account-dialog-close" aria-label="Fermer">×</button></div><p class="account-dialog-copy">Tu peux ajuster ces détails avant que l’équipe prenne la demande en charge.</p><form id="edit-request-form"><div class="edit-request-grid"><label>Date de l’événement<input name="event_date" type="date" required></label><label>Nombre d’agents<input name="agents" type="number" min="1" max="500" required></label></div><label>Lieu<input name="location" maxlength="500" required></label><label>Détails complémentaires<textarea name="details" rows="4" maxlength="3000"></textarea></label><p id="edit-request-error" class="history-error" role="alert" hidden></p><div class="account-form-actions"><button type="button" data-close-edit-request class="refresh-button">Annuler</button><button type="submit" class="account-save-button">Enregistrer les modifications</button></div></form></dialog>
   <dialog id="client-invoice-dialog" class="client-invoice-dialog"><div class="invoice-actions"><button type="button" data-close-invoice class="refresh-button">Fermer</button><button type="button" id="client-print-invoice" class="refresh-button">Imprimer / enregistrer en PDF ↗</button></div><article id="client-invoice-paper" class="invoice-paper"></article></dialog>
-  <script src="client.js"></script>
+  <script src="client.js?v=20261002-custom-request"></script>
 </body>
 </html>

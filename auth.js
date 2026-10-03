@@ -7,6 +7,10 @@ const password=document.querySelector('#password');
 const identifier=document.querySelector('#identifier');
 const company=document.querySelector('#company-name');
 async function getCsrf(){const response=await fetch('/api/csrf');if(!response.ok)throw new Error('Serveur local indisponible.');return (await response.json()).csrf}
+const localUsersKey='vigie-local-test-users-v1';
+const localSessionKey='vigie-local-test-session-v1';
+async function localPasswordHash(value){const bytes=new TextEncoder().encode(value);const digest=await crypto.subtle.digest('SHA-256',bytes);return Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('')}
+function readLocalUsers(){try{const value=JSON.parse(localStorage.getItem(localUsersKey)||'[]');return Array.isArray(value)?value:[]}catch{return []}}
 
 function updateView(){
   const signup=currentMode==='signup';
@@ -50,6 +54,20 @@ form.addEventListener('submit',async event=>{
   const isPhone=digits.length>=8&&digits.length<=15;
   if(!isEmail&&!isPhone){errorBox.textContent='Entrez un courriel valide ou un numéro de téléphone avec son indicatif régional.';identifier.focus();return}
   if(currentMode==='signup'&&password.value!==document.querySelector('#password-confirm').value){errorBox.textContent='Les deux mots de passe ne correspondent pas.';document.querySelector('#password-confirm').focus();return}
+  if(location.protocol==='file:'){
+    try{
+      const users=readLocalUsers();const passwordHash=await localPasswordHash(password.value);
+      if(currentMode==='signup'){
+        if(users.some(user=>user.identifier.toLocaleLowerCase('fr-CA')===value.toLocaleLowerCase('fr-CA'))){throw new Error('Un compte utilise déjà ce courriel ou ce numéro.')}
+        const user={id:`client-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,role:'client',company:company.value.trim(),identifier:value,passwordHash};users.push(user);localStorage.setItem(localUsersKey,JSON.stringify(users));localStorage.setItem(localSessionKey,JSON.stringify({id:user.id,role:user.role}));const localIdentity={id:user.id,role:user.role,company:user.company,identifier:user.identifier};location.href=`client.html?localUser=${encodeURIComponent(JSON.stringify(localIdentity))}`;
+      }else{
+        const user=users.find(item=>item.role==='client'&&item.identifier.toLocaleLowerCase('fr-CA')===value.toLocaleLowerCase('fr-CA')&&item.passwordHash===passwordHash);
+        if(!user)throw new Error('Courriel, numéro ou mot de passe incorrect.');
+        localStorage.setItem(localSessionKey,JSON.stringify({id:user.id,role:user.role}));const localIdentity={id:user.id,role:user.role,company:user.company,identifier:user.identifier};location.href=`client.html?localUser=${encodeURIComponent(JSON.stringify(localIdentity))}`;
+      }
+    }catch(error){errorBox.textContent=error.message||'Impossible d’enregistrer le compte dans ce navigateur.'}
+    return;
+  }
   try{
     const token=await getCsrf();
     const endpoint=currentMode==='signup'?'/api/signup':'/api/login';

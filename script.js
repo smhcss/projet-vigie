@@ -9,6 +9,21 @@ document.querySelectorAll('.main-nav a').forEach(link=>link.addEventListener('cl
   menuButton.setAttribute('aria-expanded','false');
 }));
 
+function showPublicAccount(user){
+  const accountLink=document.querySelector('#account-link');
+  const mobileLink=document.querySelector('#nav-account-link');
+  const secondary=document.querySelector('#nav-account-secondary');
+  const summary=document.querySelector('#nav-account-summary');
+  if(!user||user.role!=='client')return;
+  if(accountLink){accountLink.href='client.html';accountLink.textContent='Mon compte'}
+  if(location.protocol==='file:'){
+    try{const params=new URLSearchParams();params.set('localUser',JSON.stringify(user));params.set('localRequests',localStorage.getItem('vigie-local-test-requests-v1')||'[]');const catalog=localStorage.getItem(agentCatalogKey);if(catalog)params.set('agentCatalog',catalog);if(accountLink)accountLink.href=`client.html?${params}`;if(mobileLink)mobileLink.href=`client.html?${params}`}catch{}
+  }
+  if(mobileLink){if(location.protocol!=='file:')mobileLink.href='client.html';mobileLink.textContent='Ouvrir mon compte client'}
+  if(secondary)secondary.hidden=true;
+  if(summary){summary.hidden=false;document.querySelector('#nav-account-company').textContent=user.company||'Compte client';document.querySelector('#nav-account-identifier').textContent=user.identifier||''}
+}
+
 const guestChoice=document.querySelector('#guest-choice');
 const choicePanel=document.querySelector('#request-choice');
 const guestForm=document.querySelector('#guest-form');
@@ -17,12 +32,8 @@ const requestMessage=document.querySelector('#form-message');
 let csrfToken='';
 const localToday=new Date();
 guestDate.min=new Date(localToday.getTime()-localToday.getTimezoneOffset()*60000).toISOString().slice(0,10);
-const agentCatalogKey='vigie-agent-catalog-v1';
-const defaultAgentCategories=[
-  {name:'Agent événementiel',description:'Accueil et contrôle des accès lors d’événements.',price:null,currency:'CAD',billing_unit:'hour',active:true},
-  {name:'Agent de contrôle d’accès',description:'Vérification des entrées et gestion des accès.',price:null,currency:'CAD',billing_unit:'hour',active:true},
-  {name:'Agent de surveillance de site',description:'Surveillance planifiée de vos lieux et installations.',price:null,currency:'CAD',billing_unit:'hour',active:true}
-];
+const agentCatalogKey='vigie-agent-catalog-v2';
+const defaultAgentCategories=[];
 let availableAgentCategories=[];
 
 function agentPrice(category){
@@ -63,21 +74,29 @@ async function initializeAgentCategories(){
   availableAgentCategories=(Array.isArray(categories)?categories:defaultAgentCategories).filter(category=>category&&category.active!==false&&typeof category.name==='string');
   select.replaceChildren(new Option('Sélectionnez un type d’agent',''));
   availableAgentCategories.forEach(category=>select.add(new Option(category.name,category.name)));
-  if(!availableAgentCategories.length){select.add(new Option('Aucun type disponible pour le moment',''));select.disabled=true}
+  const submitButton=guestForm.querySelector('[type="submit"]');
+  const typeLabel=document.querySelector('#agent-type-label');
+  const emptyMessage=document.querySelector('#agent-type-empty');
+  const detailNote=document.querySelector('#agent-type-details');
+  if(!availableAgentCategories.length){select.add(new Option('',''));select.disabled=true;typeLabel.hidden=true;emptyMessage.hidden=false;detailNote.hidden=true;submitButton.disabled=true}
+  else{select.disabled=false;typeLabel.hidden=false;emptyMessage.hidden=true;detailNote.hidden=false;detailNote.textContent='Choisissez un type d’agent proposé par l’entreprise.';submitButton.disabled=false}
   const requestedAgent=params.get('agentType');if(requestedAgent&&availableAgentCategories.some(category=>category.name===requestedAgent))select.value=requestedAgent;
   select.addEventListener('change',showAgentCategory);
   showAgentCategory();
 }
 
 async function initializeSession(){
+  if(location.protocol==='file:'){
+    try{const params=new URLSearchParams(location.search);const incomingUser=JSON.parse(params.get('localUser')||'null');const incomingRequests=JSON.parse(params.get('localRequests')||'null');if(incomingUser?.role==='client'){const users=JSON.parse(localStorage.getItem('vigie-local-test-users-v1')||'[]');const index=users.findIndex(item=>item.id===incomingUser.id);if(index<0)users.push(incomingUser);else users[index]={...users[index],...incomingUser};localStorage.setItem('vigie-local-test-users-v1',JSON.stringify(users));localStorage.setItem('vigie-local-test-session-v1',JSON.stringify({id:incomingUser.id,role:'client'}))}if(Array.isArray(incomingRequests))localStorage.setItem('vigie-local-test-requests-v1',JSON.stringify(incomingRequests));const catalog=params.get('agentCatalog');if(catalog)localStorage.setItem(agentCatalogKey,catalog);if(incomingUser||Array.isArray(incomingRequests)){params.delete('localUser');params.delete('localRequests');history.replaceState(null,'',`${location.pathname}${params.size?'?'+params.toString():''}${location.hash}`)}const session=JSON.parse(localStorage.getItem('vigie-local-test-session-v1')||'null');const user=JSON.parse(localStorage.getItem('vigie-local-test-users-v1')||'[]').find(item=>item.id===session?.id&&item.role==='client');if(user){showPublicAccount(user);choicePanel.hidden=true;guestForm.hidden=false;guestForm.querySelector('.form-step').innerHTML='DEMANDE CLIENT <b>·</b> CONNECTÉ';guestForm.elements.contactMethod.value=user.identifier;guestForm.elements.company.value=user.company;guestForm.dataset.clientUserId=user.id;guestForm.querySelector('.form-privacy').textContent='Cette demande sera enregistrée dans votre historique local de test.'}}catch{}
+    return;
+  }
   try{
     const response=await fetch('/api/me');
     if(!response.ok)return;
     const result=await response.json();
     csrfToken=result.csrf||'';
     if(result.user?.role==='client'){
-      const accountLink=document.querySelector('#account-link');
-      if(accountLink){accountLink.href='client.html';accountLink.textContent='Mon compte'}
+      showPublicAccount(result.user);
       choicePanel.hidden=true;
       guestForm.hidden=false;
       guestForm.querySelector('.form-step').innerHTML='DEMANDE CLIENT <b>·</b> CONNECTÉ';
@@ -112,6 +131,24 @@ guestForm.addEventListener('submit',async event=>{
     message.textContent='Entrez un courriel valide ou un numéro de téléphone avec indicatif régional.';
     guestForm.elements.contactMethod.focus();
     return;
+  }
+  if(location.protocol==='file:'){
+    try{
+      const requests=JSON.parse(localStorage.getItem('vigie-local-test-requests-v1')||'[]');
+      const categories=JSON.parse(localStorage.getItem(agentCatalogKey)||'null')||[];
+      const category=categories.find(item=>item.name===guestForm.elements.agentType.value);
+      const session=JSON.parse(localStorage.getItem('vigie-local-test-session-v1')||'null');
+      const users=JSON.parse(localStorage.getItem('vigie-local-test-users-v1')||'[]');
+      const client=guestForm.dataset.clientUserId?users.find(item=>item.id===guestForm.dataset.clientUserId):null;
+      const values=Object.fromEntries(new FormData(guestForm).entries());
+      const activeClient=client||(session?.role==='client'?users.find(item=>item.id===session.id&&item.role==='client'):null);
+      const request={id:Date.now(),public_id:`VG-LOCAL-${String(Date.now()).slice(-6)}`,company:values.company.trim(),contact:values.contact.trim(),contact_method:values.contactMethod.trim(),event_type:values.eventType,location:values.location.trim(),agent_type:values.agentType,event_date:values.date,agents:Number(values.agents),billing_duration:Number(values.duration)||1,status:'pending',details:values.details.trim(),client_user_id:activeClient?.id||null,is_guest:!activeClient,created_at:new Date().toISOString(),billing_unit:category?.billing_unit||'hour'};
+      requests.unshift(request);localStorage.setItem('vigie-local-test-requests-v1',JSON.stringify(requests));
+      if(activeClient)showPublicAccount(activeClient);
+      const adminHref=`admin.html?localRequests=${encodeURIComponent(JSON.stringify(requests))}`;
+      message.innerHTML=`Demande ${request.public_id} enregistrée pour le test local.${activeClient?' Elle apparaîtra dans votre historique client.':''} <a href="${adminHref}">Ouvrir le panneau administrateur ↗</a>`;guestForm.reset();guestForm.elements.date.min=new Date().toISOString().slice(0,10);guestForm.elements.agentType.value='';showAgentCategory();
+    }catch(error){message.textContent='Impossible d’enregistrer cette demande dans le navigateur. Vérifie que le stockage local est autorisé.'}
+    message.scrollIntoView({behavior:'smooth',block:'nearest'});return;
   }
   try{
     if(!csrfToken){const tokenResponse=await fetch('/api/csrf');if(!tokenResponse.ok)throw new Error('');csrfToken=(await tokenResponse.json()).csrf}

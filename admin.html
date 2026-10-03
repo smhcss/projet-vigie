@@ -30,7 +30,7 @@
   <main class="main-content" id="overview">
     <header class="topbar"><button id="sidebar-toggle" class="icon-button mobile-menu" aria-label="Ouvrir le menu">☰</button><div class="breadcrumbs"><span>Administration</span><b>/</b><strong>Vue d’ensemble</strong></div><div class="top-actions"><button class="icon-button notification-button" aria-label="Notifications">♧<i></i></button><span class="top-divider"></span><span class="today-label" id="today-label"></span><span class="profile-avatar top-avatar">AD</span><button id="logout-button" class="logout-button">Déconnexion ↗</button></div></header>
     <div class="page-body">
-      <section class="welcome-row"><div><span class="eyebrow" id="welcome-date"></span><h1>Bonjour, <span id="admin-display-name">Administrateur</span> <span aria-hidden="true">✳</span></h1><p>Voici les demandes et les opérations à suivre aujourd’hui.</p></div><a href="index.html#demande" class="preview-link">Voir le site public ↗</a></section>
+      <section class="welcome-row"><div><span class="eyebrow" id="welcome-date"></span><h1>Bonjour, <span id="admin-display-name">Administrateur</span> <span aria-hidden="true">✳</span></h1><p>Voici les demandes et les opérations à suivre aujourd’hui.</p></div><a id="admin-site-preview-link" href="index.html#demande" class="preview-link">Voir le site public ↗</a></section>
 
       <section class="metric-grid" aria-label="Résumé de l’activité">
         <article class="metric-card"><div class="metric-top"><span>À examiner</span><span class="metric-icon amber-icon">◷</span></div><strong id="metric-pending">03</strong><small><i class="up-tick">↑</i> Demandes en attente d’analyse</small></article>
@@ -66,7 +66,7 @@
         <div class="panel-preview-links"><a id="public-preview-link" href="index.html#demande">Voir le formulaire public ↗</a><a id="client-panel-preview-link" href="client.html">Voir l’aperçu du panel client ↗</a></div>
         <p class="category-footnote">Les tarifs affichés aux clients correspondent à la devise et à l’unité choisies. Le prix final reste à confirmer par l’entreprise.</p>
       </section>
-      <footer class="admin-footer"><span>Vigie Sécurité · Panel administrateur</span><span id="environment-label">Serveur local de test · Données stockées sur cet ordinateur</span><a href="index.html">Retour au site public ↗</a></footer>
+      <footer class="admin-footer"><span>Vigie Sécurité · Panel administrateur</span><span id="environment-label">Serveur local de test · Données stockées sur cet ordinateur</span><a id="admin-footer-public-link" href="index.html">Retour au site public ↗</a></footer>
     </div>
   </main>
 
@@ -76,6 +76,6 @@
   <dialog id="invoice-create-dialog" class="detail-dialog invoice-create-dialog"><div class="dialog-header"><div><span class="eyebrow">FACTURE</span><h2>Émettre une facture</h2></div><button class="close-dialog" data-close aria-label="Fermer">×</button></div><p class="dialog-copy" id="invoice-create-summary"></p><form id="invoice-create-form"><label>Description sur la facture<input name="description" required maxlength="180"></label><div class="invoice-input-row"><label>Quantité facturable<input name="quantity" type="number" min="1" max="100000" step="1" required></label><label>Tarif unitaire<input name="unit_price" type="number" min="0" max="1000000" step="0.01" required></label><label>Devise<select name="currency"><option value="CAD">CAD</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="XOF">XOF</option><option value="GBP">GBP</option></select></label></div><p class="invoice-total-preview">Total de la facture <strong id="invoice-total-preview">—</strong></p><p class="reject-hint">Vérifie le tarif et la quantité avant d’émettre cette facture.</p><button class="action-primary invoice-submit" type="submit">Émettre la facture <span>→</span></button></form></dialog>
   <dialog id="invoice-preview-dialog" class="detail-dialog invoice-preview-dialog"><div class="invoice-actions"><button class="action-secondary" data-close>Fermer</button><button id="print-invoice" class="action-primary" type="button">Imprimer / enregistrer en PDF ↗</button></div><article id="invoice-paper" class="invoice-paper"></article></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="admin.js"></script>
+  <script src="admin.js?v=20261002-custom-request-approval"></script>
 </body>
 </html>

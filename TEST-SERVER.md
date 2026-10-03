@@ -27,7 +27,7 @@ Le terminal affiche un lien à usage unique, valable 24 heures. Remets-le au pro
 ## Parcours de test
 
 - Le formulaire public permet une demande comme invité.
-- Un client peut créer un compte ou se connecter; une demande envoyée en étant connecté est liée au compte. Après connexion, `/client.html` présente son historique et l’état de chaque demande.
+- Un client peut créer un compte ou se connecter; une demande envoyée en étant connecté est liée au compte. La session reste active pendant 30 jours ou jusqu’à la déconnexion. Le menu mobile indique le compte connecté et ses coordonnées.
 - Le panel admin affiche les demandes enregistrées et permet de les prendre en charge, approuver, refuser avec un motif obligatoire et coordonner.
 - Tant qu’une demande est « À examiner », le client peut corriger la date, le nombre d’agents, le lieu et les détails, ou annuler sa demande. Après sa prise en charge, ces actions ne sont plus disponibles; le panel admin reflète les changements.
 - Le propriétaire peut gérer les types d’agents, leurs descriptions, leurs tarifs, leurs devises et leur visibilité. Les catégories actives apparaissent dans le formulaire public.
@@ -37,7 +37,7 @@ Le terminal affiche un lien à usage unique, valable 24 heures. Remets-le au pro
 
 En ouvrant directement `admin.html` ou `client.html` comme fichier dans le navigateur, chaque panneau affiche un aperçu avec des données fictives. Les changements du catalogue et les factures de démonstration sont conservés dans le navigateur; le lien « Voir le site public » ouvre le formulaire avec les catégories actives, et chaque client peut consulter les services avant de commencer une demande. Le nom du propriétaire enregistré s’affiche après connexion au serveur local.
 
-Le serveur écoute uniquement sur `127.0.0.1`, donc il n’est pas partagé sur le réseau local. Les mots de passe sont hachés avec PBKDF2 et les sessions utilisent des cookies HttpOnly. C’est un environnement de développement local, pas un serveur à exposer à Internet ni une configuration de production. Arrête-le avec `Ctrl+C`.
+Le serveur écoute uniquement sur `127.0.0.1`, donc il n’est pas partagé sur le réseau local. Les mots de passe sont hachés avec PBKDF2 et les sessions utilisent des cookies HttpOnly. La session expire après 30 jours ou à la déconnexion. C’est un environnement de développement local, pas un serveur à exposer à Internet ni une configuration de production. Arrête-le avec `Ctrl+C`.
 
 Pour effacer toutes les données de test, arrête le serveur puis supprime `.vigie-test.sqlite3` (et ses éventuels fichiers `-wal` ou `-shm`).
 

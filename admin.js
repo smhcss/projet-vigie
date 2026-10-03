@@ -16,7 +16,7 @@ const invoiceCreateForm=document.querySelector('#invoice-create-form');
 const categoryForm=document.querySelector('#category-form');
 const categoryList=document.querySelector('#category-list');
 const labels={pending:'À examiner',review:'En traitement',approved:'Approuvée',assigned:'Agents coordonnés',rejected:'Refusée',cancelled:'Annulée par le client'};
-const categoryStorageKey='vigie-agent-catalog-v1';
+const categoryStorageKey='vigie-agent-catalog-v2';
 const billingLabels={hour:'par heure et par agent',day:'par jour et par agent',event:'par événement'};
 
 function previewSeed(){
@@ -29,18 +29,35 @@ function previewSeed(){
     {id:5,company:'Clinique du Centre',event_type:'Présence ponctuelle',location:'Montréal, QC',contact:'Sonia Bouchard',contact_method:'sonia@example.com · 514 555-0181',agent_type:'Agent de contrôle d’accès',event_date:dateFromToday(7),agents:1,status:'cancelled',details:'Demande retirée par le client avant prise en charge.'}
   ];
 }
-function previewCategorySeed(){return [
-  {id:1,name:'Agent événementiel',description:'Accueil et contrôle des accès lors d’événements.',price:null,currency:'CAD',billing_unit:'hour',active:true},
-  {id:2,name:'Agent de contrôle d’accès',description:'Vérification des entrées et gestion des accès.',price:null,currency:'CAD',billing_unit:'hour',active:true},
-  {id:3,name:'Agent de surveillance de site',description:'Surveillance planifiée de vos lieux et installations.',price:null,currency:'CAD',billing_unit:'hour',active:true}
-]}
-function getPreviewCategories(){try{const saved=localStorage.getItem(categoryStorageKey);if(saved){const parsed=JSON.parse(saved);if(Array.isArray(parsed))return parsed}}catch{}return previewCategorySeed()}
+function previewCategorySeed(){return []}
+function removeLegacyPreviewExamples(categories){
+  // Older browser previews persisted these sample types in localStorage. Match
+  // by normalized name instead of ID: IDs can change when categories are edited
+  // or migrated. Explicitly created types with the same name remain untouched.
+  const oldNames=new Set([
+    'agent evenementiel',
+    'agent de controle d acces',
+    'agent de surveillance de site',
+    'agent de patrouille'
+  ]);
+  return categories.filter(category=>{
+    if(!category||typeof category!=='object')return false;
+    const normalizedName=String(category.name||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[’']/g,' ').replace(/[^a-z0-9]+/g,' ').trim();
+    return category.created_by_admin===true||!oldNames.has(normalizedName);
+  });
+}
+function getPreviewCategories(){
+  try{const saved=localStorage.getItem(categoryStorageKey);if(saved){const parsed=JSON.parse(saved);if(Array.isArray(parsed)){const clean=removeLegacyPreviewExamples(parsed);if(JSON.stringify(clean)!==JSON.stringify(parsed))localStorage.setItem(categoryStorageKey,JSON.stringify(clean));return clean}}}catch{}
+  try{const legacy=JSON.parse(localStorage.getItem('vigie-agent-catalog-v1')||'null');if(Array.isArray(legacy)){const migrated=removeLegacyPreviewExamples(legacy);localStorage.setItem(categoryStorageKey,JSON.stringify(migrated));return migrated}}catch{}
+  return previewCategorySeed()
+}
 function savePreviewCategories(){try{localStorage.setItem(categoryStorageKey,JSON.stringify(agentCategories))}catch{}}
 function getPreviewRequests(){
+  try{const users=JSON.parse(localStorage.getItem('vigie-local-test-users-v1')||'[]');if(users.some(user=>user.role==='admin')){const testRequests=JSON.parse(localStorage.getItem('vigie-local-test-requests-v1')||'[]');return Array.isArray(testRequests)?testRequests:[]}}catch{}
   try{const saved=localStorage.getItem(previewStorageKey);if(saved){const parsed=JSON.parse(saved);if(Array.isArray(parsed))return parsed}}catch{}
   return previewSeed();
 }
-function savePreviewRequests(){try{localStorage.setItem(previewStorageKey,JSON.stringify(requests))}catch{}}
+function savePreviewRequests(){try{localStorage.setItem(previewStorageKey,JSON.stringify(requests));const users=JSON.parse(localStorage.getItem('vigie-local-test-users-v1')||'[]');if(users.some(user=>user.role==='admin'))localStorage.setItem('vigie-local-test-requests-v1',JSON.stringify(requests))}catch{}}
 
 async function api(path,options={}){
   if(browserPreview){
@@ -49,13 +66,13 @@ async function api(path,options={}){
     if(path==='/api/admin/agent-categories'&&method==='GET')return {categories:agentCategories};
     if(path==='/api/agent-categories'&&method==='GET')return {categories:agentCategories.filter(category=>category.active)};
     if(path==='/api/admin/agent-categories'&&method==='POST'){
-      const category=JSON.parse(options.body||'{}');category.id=Math.max(0,...agentCategories.map(item=>Number(item.id)||0))+1;
+      const category=JSON.parse(options.body||'{}');category.id=Math.max(0,...agentCategories.map(item=>Number(item.id)||0))+1;category.created_by_admin=true;
       agentCategories.push(category);savePreviewCategories();return {category};
     }
     const categoryMatch=path.match(/^\/api\/admin\/agent-categories\/(\d+)$/);
     if(categoryMatch&&method==='PATCH'){
       const index=agentCategories.findIndex(item=>item.id===Number(categoryMatch[1]));if(index<0)throw new Error('Ce type d’agent est introuvable.');
-      const category={...JSON.parse(options.body||'{}'),id:Number(categoryMatch[1])};agentCategories[index]=category;savePreviewCategories();return {category};
+      const category={...JSON.parse(options.body||'{}'),id:Number(categoryMatch[1]),created_by_admin:agentCategories[index].created_by_admin===true};agentCategories[index]=category;savePreviewCategories();return {category};
     }
     if(categoryMatch&&method==='DELETE'){
       agentCategories=agentCategories.filter(item=>item.id!==Number(categoryMatch[1]));savePreviewCategories();return {ok:true};
@@ -68,12 +85,15 @@ async function api(path,options={}){
       if(update.action==='take'&&item.status==='pending')item.status='review';
       else if(update.action==='approve'&&item.status==='review'){
         const category=agentCategories.find(entry=>entry.name===item.agent_type&&entry.active!==false);
-        if(!category?.price)throw new Error('Configure d’abord un tarif actif pour ce type d’agent dans la liste des services.');
-        const digits=category.currency==='XOF'?0:2;const unitMinor=Math.round(Number(category.price)*(10**digits));
-        const quantity=category.billing_unit==='event'?1:(Number(item.agents)||1)*(Number(item.billing_duration)||1);
-        item.status='approved';item.invoice_number=`VG-${new Date().toISOString().slice(0,10).replaceAll('-','')}-${Math.random().toString(16).slice(2,8).toUpperCase()}`;
-        item.invoice_description=category.billing_unit==='event'?`${item.agent_type} — événement (${item.agents} agents)`: `${item.agent_type} — ${item.agents} agents × ${item.billing_duration||1} ${category.billing_unit==='day'?'jour':'heure'}${(item.billing_duration||1)===1?'':'s'}`;
-        item.invoice_quantity=quantity;item.invoice_unit_price_minor=unitMinor;item.invoice_currency=category.currency||'CAD';item.invoice_total_minor=unitMinor*quantity;item.invoice_issued_at=Date.now();
+        if(!category?.price&&item.request_kind!=='custom')throw new Error('Configure d’abord un tarif actif pour ce type d’agent dans la liste des services.');
+        item.status='approved';
+        if(category?.price){
+          const digits=category.currency==='XOF'?0:2;const unitMinor=Math.round(Number(category.price)*(10**digits));
+          const quantity=category.billing_unit==='event'?1:(Number(item.agents)||1)*(Number(item.billing_duration)||1);
+          item.invoice_number=`VG-${new Date().toISOString().slice(0,10).replaceAll('-','')}-${Math.random().toString(16).slice(2,8).toUpperCase()}`;
+          item.invoice_description=category.billing_unit==='event'?`${item.agent_type} — événement (${item.agents} agents)`: `${item.agent_type} — ${item.agents} agents × ${item.billing_duration||1} ${category.billing_unit==='day'?'jour':'heure'}${(item.billing_duration||1)===1?'':'s'}`;
+          item.invoice_quantity=quantity;item.invoice_unit_price_minor=unitMinor;item.invoice_currency=category.currency||'CAD';item.invoice_total_minor=unitMinor*quantity;item.invoice_issued_at=Date.now();
+        }
       }
       else if(update.action==='issue-invoice'&&['approved','assigned'].includes(item.status)){
         if(item.invoice_number)throw new Error('Une facture a déjà été émise pour cette demande.');
@@ -117,7 +137,7 @@ function render(){
     const text=`${item.company} ${item.event_type} ${item.location} ${item.contact}`.toLocaleLowerCase('fr-CA');
     return matchesStatus&&text.includes(query);
   });
-  list.innerHTML=filtered.map(item=>`<tr><td><div class="client-cell"><span class="client-avatar">${esc(item.company.split(/\s+/).map(part=>part[0]).slice(0,2).join('').toUpperCase())}</span><span class="client-copy"><b>${esc(item.company)}</b><small>${esc(item.event_type)} · ${esc(item.agent_type)}</small></span></div></td><td>${esc(formatDate(item.event_date))}</td><td>${Number(item.agents)||0} agents</td><td><span class="status status-${item.status}">${labels[item.status]||'Statut inconnu'}</span></td><td><button class="row-action" data-view="${item.id}">Consulter</button></td></tr>`).join('')||'<tr><td colspan="5" style="padding:22px 5px;color:#899598">Aucune demande ne correspond à votre recherche.</td></tr>';
+  list.innerHTML=filtered.map(item=>`<tr><td><div class="client-cell"><span class="client-avatar">${esc(item.company.split(/\s+/).map(part=>part[0]).slice(0,2).join('').toUpperCase())}</span><span class="client-copy"><b>${esc(item.company)}</b><small>${item.is_guest?'Invité':'Compte client'} · ${esc(item.event_type)} · ${esc(item.agent_type)}</small></span></div></td><td>${esc(formatDate(item.event_date))}</td><td>${Number(item.agents)||0} agents</td><td><span class="status status-${item.status}">${labels[item.status]||'Statut inconnu'}</span></td><td><button class="row-action" data-view="${item.id}">Consulter</button></td></tr>`).join('')||'<tr><td colspan="5" style="padding:22px 5px;color:#899598">Aucune demande ne correspond à votre recherche.</td></tr>';
   document.querySelector('#results-label').textContent=`${filtered.length} demande${filtered.length===1?'':'s'}`;
   const pending=requests.filter(item=>item.status==='pending').length;
   const review=requests.filter(item=>item.status==='review').length;
@@ -136,10 +156,17 @@ function formatPrice(category){
   return `${amount} ${billingLabels[category.billing_unit]||billingLabels.hour}`;
 }
 function renderCategories(){
-  categoryList.innerHTML=agentCategories.map(category=>`<tr><td><div class="category-name"><b>${esc(category.name)}</b><small>${esc(category.description||'Aucune description pour le client.')}</small></div></td><td>${esc(formatPrice(category))}</td><td><span class="category-visibility ${category.active?'is-active':''}">${category.active?'Proposé':'Masqué'}</span></td><td class="category-actions"><button type="button" data-edit-category="${category.id}">Modifier</button><button type="button" data-delete-category="${category.id}">Supprimer</button></td></tr>`).join('')||'<tr><td colspan="4" class="category-empty">Aucun type d’agent. Ajoute ton premier service ci-dessus.</td></tr>';
+  categoryList.innerHTML=agentCategories.map(category=>`<tr><td><div class="category-name"><b>${esc(category.name)}</b><small>${esc(category.description||'Aucune description pour le client.')}</small></div></td><td>${esc(formatPrice(category))}</td><td><span class="category-visibility ${category.active?'is-active':''}">${category.active?'Proposé':'Masqué'}</span></td><td class="category-actions"><button type="button" data-edit-category="${category.id}">Modifier</button><button type="button" data-delete-category="${category.id}">Supprimer</button></td></tr>`).join('')||'<tr><td colspan="4" class="category-empty">Aucun type d’agent créé pour le moment. Crée un type ci-dessus pour l’afficher aux clients.</td></tr>';
   const catalog=encodeURIComponent(JSON.stringify(agentCategories.filter(category=>category.active)));
-  document.querySelector('#public-preview-link').href=`index.html?agentCatalog=${catalog}#demande`;
-  document.querySelector('#client-panel-preview-link').href=`client.html?agentCatalog=${catalog}`;
+  const localRequests=browserPreview?`&localRequests=${encodeURIComponent(JSON.stringify(requests))}`:'';
+  const publicPreviewUrl=`index.html?agentCatalog=${catalog}${localRequests}#demande`;
+  document.querySelector('#public-preview-link').href=publicPreviewUrl;
+  document.querySelector('#admin-site-preview-link').href=publicPreviewUrl;
+  document.querySelector('#admin-footer-public-link').href=publicPreviewUrl;
+  if(browserPreview)document.querySelectorAll('a[href^="index.html"]').forEach(link=>{const hash=new URL(link.href,location.href).hash;link.href=`index.html?agentCatalog=${catalog}${localRequests}${hash||'#demande'}`});
+  const linkedRequest=requests.find(item=>item.client_user_id&&!item.is_guest);
+  const localUser=browserPreview&&linkedRequest?`&localUser=${encodeURIComponent(JSON.stringify({id:linkedRequest.client_user_id,role:'client',company:linkedRequest.company,identifier:String(linkedRequest.contact_method||'').split(' · ')[0]}))}`:'';
+  document.querySelector('#client-panel-preview-link').href=`client.html?agentCatalog=${catalog}${localRequests}${localUser}`;
 }
 async function loadCategories(){
   try{const result=await api('/api/admin/agent-categories');agentCategories=result.categories||[];renderCategories()}
@@ -155,6 +182,7 @@ function renderUpcoming(){
   }).join('')||'<p class="no-upcoming">Aucune demande à venir.</p>';
 }
 async function loadRequests(){
+  if(browserPreview){requests=getPreviewRequests();render();return}
   try{const result=await api('/api/admin/requests');requests=result.requests;render()}
   catch(error){if(error.message!=='Connexion requise.')toast(error.message)}
 }
@@ -163,7 +191,7 @@ function showRequest(id){
   document.querySelector('#detail-title').textContent=activeRequest.event_type;
   const requestCategory=agentCategories.find(item=>item.name===activeRequest.agent_type);
   const durationItem=requestCategory?.billing_unit==='event'?'':`<div class="detail-item"><small>Durée prévue</small><b>${Number(activeRequest.billing_duration)||1} ${requestCategory?.billing_unit==='day'?'jour(s)':'heure(s)'}</b></div>`;
-  document.querySelector('#detail-content').innerHTML=`<div class="detail-grid"><div class="detail-item"><small>Entreprise cliente</small><b>${esc(activeRequest.company)}</b></div><div class="detail-item"><small>Responsable</small><b>${esc(activeRequest.contact)}</b></div><div class="detail-item"><small>Courriel / téléphone</small><b>${esc(activeRequest.contact_method)}</b></div><div class="detail-item"><small>Type d’agent</small><b>${esc(activeRequest.agent_type)}</b></div><div class="detail-item"><small>Date de l’événement</small><b>${esc(formatDate(activeRequest.event_date))}</b></div><div class="detail-item"><small>Effectif demandé</small><b>${Number(activeRequest.agents)} agents</b></div>${durationItem}<div class="detail-item"><small>Lieu</small><b>${esc(activeRequest.location)}</b></div><div class="detail-item"><small>Statut</small><b><span class="status status-${activeRequest.status}">${labels[activeRequest.status]}</span></b></div>${activeRequest.team?`<div class="detail-item"><small>Équipe responsable</small><b>${esc(activeRequest.team)}</b></div>`:''}</div><div class="detail-notes"><small>DÉTAILS DU CLIENT</small><p>${esc(activeRequest.details||'Aucun détail supplémentaire fourni.')}</p></div>${activeRequest.coordination_note?`<div class="detail-notes"><small>NOTE DE COORDINATION</small><p>${esc(activeRequest.coordination_note)}</p></div>`:''}${activeRequest.rejection_reason?`<div class="detail-notes rejection-notes"><small>MOTIF DU REFUS</small><p>${esc(activeRequest.rejection_reason)}</p></div>`:''}`;
+  document.querySelector('#detail-content').innerHTML=`<div class="detail-grid"><div class="detail-item"><small>Entreprise cliente</small><b>${esc(activeRequest.company)}</b></div><div class="detail-item"><small>Type de demande</small><b>${activeRequest.request_kind==='custom'?'Personnalisée':activeRequest.is_guest?'Invité':'Compte client'}</b></div><div class="detail-item"><small>Responsable</small><b>${esc(activeRequest.contact)}</b></div><div class="detail-item"><small>Courriel / téléphone</small><b>${esc(activeRequest.contact_method)}</b></div><div class="detail-item"><small>Type d’agent souhaité</small><b>${esc(activeRequest.agent_type)}</b></div><div class="detail-item"><small>Date de l’événement</small><b>${esc(formatDate(activeRequest.event_date))}${activeRequest.event_start_time?` · ${esc(activeRequest.event_start_time)}${activeRequest.event_end_time?`–${esc(activeRequest.event_end_time)}`:''}`:''}</b></div><div class="detail-item"><small>Effectif demandé</small><b>${Number(activeRequest.agents)} agents</b></div>${durationItem}<div class="detail-item"><small>Lieu</small><b>${esc(activeRequest.location)}</b></div><div class="detail-item"><small>Statut</small><b><span class="status status-${activeRequest.status}">${labels[activeRequest.status]}</span></b></div>${activeRequest.team?`<div class="detail-item"><small>Équipe responsable</small><b>${esc(activeRequest.team)}</b></div>`:''}</div><div class="detail-notes"><small>DÉTAILS DU CLIENT</small><p>${esc(activeRequest.details||'Aucun détail supplémentaire fourni.')}</p></div>${activeRequest.coordination_note?`<div class="detail-notes"><small>NOTE DE COORDINATION</small><p>${esc(activeRequest.coordination_note)}</p></div>`:''}${activeRequest.rejection_reason?`<div class="detail-notes rejection-notes"><small>MOTIF DU REFUS</small><p>${esc(activeRequest.rejection_reason)}</p></div>`:''}`;
   const actions=document.querySelector('#detail-actions');
   if(activeRequest.status==='pending')actions.innerHTML='<button class="action-secondary" data-dialog-close>Fermer</button><button class="action-primary" data-action="take">Prendre en charge <span>→</span></button>';
   else if(activeRequest.status==='review')actions.innerHTML='<button class="action-secondary" data-dialog-close>Fermer</button><button class="action-danger" data-action="reject">Refuser</button><button class="action-approve" data-action="approve">Approuver la demande <span>✓</span></button>';
@@ -184,7 +212,7 @@ function showInvoice(request){
   invoicePreviewDialog.showModal();
 }
 async function transition(action,extra={}){
-  try{const requestId=activeRequest.id;await api(`/api/admin/requests/${requestId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...extra})});if(action==='reject')rejectDialog.close();else if(action==='issue-invoice')invoiceCreateDialog.close();else detailDialog.close();toast(action==='take'?'Demande prise en charge.':action==='approve'?'Demande approuvée, facture émise.':action==='reject'?'Demande refusée.':action==='issue-invoice'?'Facture émise.':action==='mark-paid'?'Paiement enregistré.':'Coordination enregistrée.');await loadRequests();activeRequest=requests.find(item=>item.id===requestId)||activeRequest;if(action==='issue-invoice'||action==='approve')showInvoice(activeRequest);else if(action==='mark-paid')showRequest(requestId);return true}
+  try{const requestId=activeRequest.id;const wasCustom=activeRequest.request_kind==='custom';await api(`/api/admin/requests/${requestId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...extra})});if(action==='reject')rejectDialog.close();else if(action==='issue-invoice')invoiceCreateDialog.close();else detailDialog.close();toast(action==='take'?'Demande prise en charge.':action==='approve'?wasCustom?'Demande personnalisée approuvée.':'Demande approuvée, facture émise.':action==='reject'?'Demande refusée.':action==='issue-invoice'?'Facture émise.':action==='mark-paid'?'Paiement enregistré.':'Coordination enregistrée.');await loadRequests();activeRequest=requests.find(item=>item.id===requestId)||activeRequest;if(action==='issue-invoice'||(action==='approve'&&activeRequest.invoice_number))showInvoice(activeRequest);else if(action==='approve'||action==='mark-paid')showRequest(requestId);return true}
   catch(error){toast(error.message);return false}
 }
 list.addEventListener('click',event=>{const button=event.target.closest('[data-view]');if(button)showRequest(button.dataset.view)});
@@ -241,12 +269,15 @@ document.querySelector('#print-invoice').addEventListener('click',()=>{document.
 document.querySelector('#logout-button').addEventListener('click',async()=>{try{const token=await fetch('/api/csrf').then(r=>r.json()).then(d=>d.csrf);await fetch('/api/logout',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':token},body:'{}'})}finally{location.href='/admin-login.html'}});
 
 if(browserPreview){
+  let localAdmin=null;let localSession=null;
+  try{const params=new URLSearchParams(location.search);const incoming=JSON.parse(params.get('localAdmin')||'null');const incomingRequests=JSON.parse(params.get('localRequests')||'null');const users=JSON.parse(localStorage.getItem('vigie-local-test-users-v1')||'[]');if(Array.isArray(incomingRequests)){localStorage.setItem('vigie-local-test-requests-v1',JSON.stringify(incomingRequests));params.delete('localRequests');history.replaceState(null,'',`${location.pathname}${params.size?'?'+params.toString():''}${location.hash}`)}if(incoming?.role==='admin'){const index=users.findIndex(user=>user.id===incoming.id);if(index<0)users.push(incoming);else users[index]={...users[index],...incoming};localStorage.setItem('vigie-local-test-users-v1',JSON.stringify(users));localStorage.setItem('vigie-local-test-session-v1',JSON.stringify({id:incoming.id,role:'admin'}));localStorage.setItem('vigie-admin-display-name',incoming.display_name)}localAdmin=users.find(user=>user.role==='admin')||null;localSession=JSON.parse(localStorage.getItem('vigie-local-test-session-v1')||'null')}catch{}
+  if(localAdmin&&localSession?.id!==localAdmin.id){location.href=`admin-login.html?localAdmin=${encodeURIComponent(JSON.stringify(localAdmin))}`;throw new Error('Connexion administrateur requise.')}
   requests=getPreviewRequests();csrfToken='browser-preview';
   agentCategories=getPreviewCategories();
-  const demoAdminName=localStorage.getItem('vigie-admin-display-name');if(demoAdminName)document.querySelector('#admin-display-name').textContent=demoAdminName;
-  document.querySelector('#environment-label').textContent='Aperçu navigateur · Données de démonstration conservées sur cet appareil';
-  document.querySelector('#logout-button').addEventListener('click',event=>{event.stopImmediatePropagation();toast('L’aperçu ne nécessite pas de connexion administrateur.')},true);
-  document.querySelector('#logout-button').textContent='Mode aperçu';
+  const demoAdminName=localAdmin?.display_name||localStorage.getItem('vigie-admin-display-name');if(demoAdminName){document.querySelector('#admin-display-name').textContent=demoAdminName;document.querySelector('#admin-profile-name').textContent=demoAdminName;document.querySelector('#admin-profile-identifier').textContent=localAdmin?.identifier||''}
+  document.querySelector('#environment-label').textContent=localAdmin?'Test local · Données conservées dans ce navigateur':'Aperçu navigateur · Données de démonstration conservées sur cet appareil';
+  if(localAdmin){document.querySelector('#logout-button').addEventListener('click',event=>{event.preventDefault();event.stopImmediatePropagation();localStorage.removeItem('vigie-local-test-session-v1');location.href=`admin-login.html?localAdmin=${encodeURIComponent(JSON.stringify(localAdmin))}`},true)}
+  else{document.querySelector('#logout-button').addEventListener('click',event=>{event.stopImmediatePropagation();toast('L’aperçu ne nécessite pas de connexion administrateur.')},true);document.querySelector('#logout-button').textContent='Mode aperçu'}
   render();renderCategories();
 }else{
   (async()=>{try{const session=await fetch('/api/me').then(r=>r.json());csrfToken=session.csrf;if(session.user?.role!=='admin'){location.href='/admin-login.html';return}const adminName=session.user.display_name||session.user.company||'Administrateur';document.querySelector('#admin-display-name').textContent=adminName;document.querySelector('#admin-profile-name').textContent=adminName;document.querySelector('#admin-profile-identifier').textContent=session.user.identifier||'';await Promise.all([loadRequests(),loadCategories()])}catch{location.href='/admin-login.html'}})();
