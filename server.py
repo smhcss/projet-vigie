@@ -321,6 +321,34 @@ class Handler(SimpleHTTPRequestHandler):
                 rows = db.execute("SELECT * FROM agent_categories ORDER BY name COLLATE NOCASE").fetchall()
             self.send_json(200, {"categories": [self.public_category(row) for row in rows]})
             return
+        if path == "/api/admin/clients":
+            if not self.require_role("admin"):
+                return
+            with connect() as db:
+                rows = db.execute("""SELECT u.id,u.company,u.display_identifier AS identifier,
+                    COUNT(r.id) AS request_count,
+                    (SELECT event_date FROM requests WHERE client_id=u.id ORDER BY created_at DESC,id DESC LIMIT 1) AS last_request_date,
+                    (SELECT status FROM requests WHERE client_id=u.id ORDER BY created_at DESC,id DESC LIMIT 1) AS last_request_status
+                    FROM users u LEFT JOIN requests r ON r.client_id=u.id
+                    WHERE u.role='client' GROUP BY u.id ORDER BY u.company COLLATE NOCASE""").fetchall()
+            self.send_json(200, {"clients": [dict(row) for row in rows]})
+            return
+        if path == "/api/admin/settings":
+            user = self.require_role("admin")
+            if not user:
+                return
+            defaults = {"admin_name": user["company"] or "Administrateur", "company_name": user["company"] or "Vigie Sécurité", "public_email": "",
+                        "public_phone": "", "address": "", "default_currency": "CAD"}
+            with connect() as db:
+                row = db.execute("SELECT value FROM app_metadata WHERE key='admin_settings_v1'").fetchone()
+            if row:
+                try:
+                    defaults.update(json.loads(row["value"]))
+                except (TypeError, json.JSONDecodeError):
+                    pass
+            defaults["identifier"] = user["display_identifier"]
+            self.send_json(200, {"settings": defaults})
+            return
         if path == "/api/admin/requests":
             if not self.require_role("admin"):
                 return
@@ -441,6 +469,32 @@ class Handler(SimpleHTTPRequestHandler):
             return
         user = self.require_role("admin")
         if not user:
+            return
+        if path == "/api/admin/settings":
+            try:
+                data = self.read_json()
+                admin_name = (data.get("admin_name") or "").strip()[:120]
+                company_name = (data.get("company_name") or "").strip()[:120]
+                public_email = (data.get("public_email") or "").strip()[:254]
+                public_phone = (data.get("public_phone") or "").strip()[:30]
+                address = (data.get("address") or "").strip()[:250]
+                currency = data.get("default_currency")
+                if len(admin_name) < 2 or len(company_name) < 2:
+                    raise ValueError("Indique le nom de l’administrateur et celui de l’entreprise (2 caractères minimum).")
+                if currency not in CURRENCIES:
+                    raise ValueError("Choisis une devise prise en charge.")
+                if public_email and ("@" not in public_email or len(public_email.split("@", 1)[0]) < 1 or "." not in public_email.split("@", 1)[1]):
+                    raise ValueError("Indique une adresse courriel valide.")
+                settings = {"admin_name": admin_name, "company_name": company_name, "public_email": public_email,
+                            "public_phone": public_phone, "address": address, "default_currency": currency}
+                with connect() as db:
+                    db.execute("INSERT INTO app_metadata(key,value) VALUES('admin_settings_v1',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                               (json.dumps(settings, ensure_ascii=False),))
+                    updated = db.execute("SELECT display_identifier FROM users WHERE id=?", (user["id"],)).fetchone()
+                settings.update({"admin_name": admin_name, "identifier": updated["display_identifier"]})
+                self.send_json(200, {"ok": True, "settings": settings})
+            except ValueError as exc:
+                self.send_json(400, {"error": str(exc)})
             return
         category_match = re.fullmatch(r"/api/admin/agent-categories/(\d+)", path)
         if category_match:

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="admin.css?v=20261002-settings">
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
@@ -18,17 +18,17 @@
     <nav class="side-nav" aria-label="Menu administrateur">
       <a class="nav-item selected" href="#overview"><span>▦</span> Vue d’ensemble</a>
       <a class="nav-item" href="#requests"><span>▤</span> Demandes <b class="nav-count" id="pending-count">3</b></a>
-      <a class="nav-item muted-link" href="#clients"><span>♙</span> Clients <small>Bientôt</small></a>
+      <a class="nav-item" href="#clients"><span>♙</span> Clients</a>
       <a class="nav-item" href="#categories"><span>♟</span> Types d’agents</a>
-      <a class="nav-item muted-link" href="#planning"><span>▦</span> Planning <small>Bientôt</small></a>
+      <a class="nav-item" href="#planning"><span>▦</span> Planning</a>
     </nav>
     <div class="nav-label tools-label">OUTILS</div>
-    <nav class="side-nav"><a class="nav-item muted-link" href="#settings"><span>⚙</span> Paramètres <small>Bientôt</small></a></nav>
-    <div class="sidebar-bottom"><div class="help-box"><span class="help-mark">?</span><b>Besoin d’aide ?</b><small>Contactez l’équipe technique.</small><a href="mailto:bonjour@vigie.example">Nous contacter ↗</a></div><a class="profile" href="#profil"><span class="profile-avatar">AD</span><span><b id="admin-profile-name">Administrateur</b><small id="admin-profile-identifier">admin@vigie.example</small></span><i>•••</i></a></div>
+    <nav class="side-nav"><a class="nav-item" href="#settings"><span>⚙</span> Paramètres</a></nav>
+    <div class="sidebar-bottom"><div class="help-box"><span class="help-mark">?</span><b>Besoin d’aide ?</b><small>Contactez l’équipe technique.</small><a href="mailto:bonjour@vigie.example">Nous contacter ↗</a></div><a class="profile" href="#settings" aria-label="Ouvrir le profil et les paramètres"><span class="profile-avatar">AD</span><span><b id="admin-profile-name">Administrateur</b><small id="admin-profile-identifier">admin@vigie.example</small></span><i>•••</i></a></div>
   </aside>
 
   <main class="main-content" id="overview">
-    <header class="topbar"><button id="sidebar-toggle" class="icon-button mobile-menu" aria-label="Ouvrir le menu">☰</button><div class="breadcrumbs"><span>Administration</span><b>/</b><strong>Vue d’ensemble</strong></div><div class="top-actions"><button class="icon-button notification-button" aria-label="Notifications">♧<i></i></button><span class="top-divider"></span><span class="today-label" id="today-label"></span><span class="profile-avatar top-avatar">AD</span><button id="logout-button" class="logout-button">Déconnexion ↗</button></div></header>
+    <header class="topbar"><button id="sidebar-toggle" class="icon-button mobile-menu" aria-label="Ouvrir le menu">☰</button><div class="breadcrumbs"><span>Administration</span><b>/</b><strong>Vue d’ensemble</strong></div><div class="top-actions"><button class="icon-button notification-button" aria-label="Notifications">♧<i></i></button><span class="top-divider"></span><span class="today-label" id="today-label"></span><a id="top-profile-link" class="top-profile-link" href="#settings" aria-label="Ouvrir mon profil et les paramètres" title="Profil et paramètres"><span class="profile-avatar top-avatar">AD</span></a><button id="logout-button" class="logout-button">Déconnexion ↗</button></div></header>
     <div class="page-body">
       <section class="welcome-row"><div><span class="eyebrow" id="welcome-date"></span><h1>Bonjour, <span id="admin-display-name">Administrateur</span> <span aria-hidden="true">✳</span></h1><p>Voici les demandes et les opérations à suivre aujourd’hui.</p></div><a id="admin-site-preview-link" href="index.html#demande" class="preview-link">Voir le site public ↗</a></section>
 
@@ -51,6 +51,13 @@
 
       <section class="workflow-banner"><div class="workflow-shield">✓</div><div><b>Chaque demande suit un processus de validation</b><p>Examinez les détails, approuvez la demande ou refusez-la en indiquant un motif, puis coordonnez les agents.</p></div><a href="#requests">Traiter les demandes <span>→</span></a></section>
 
+      <section class="panel clients-panel" id="clients">
+        <div class="panel-heading"><div><span class="eyebrow">COMPTES CLIENTS</span><h2>Répertoire des clients</h2></div><span class="calendar-icon">♙</span></div>
+        <p class="clients-intro">Consultez les comptes enregistrés, leurs coordonnées et le nombre de demandes associées.</p>
+        <div class="clients-toolbar"><label class="search-box"><span>⌕</span><input id="client-search" type="search" placeholder="Rechercher une entreprise ou un contact" aria-label="Rechercher un client"></label><span id="client-results-label" class="clients-results-label"></span></div>
+        <div class="table-scroll"><table class="clients-table"><thead><tr><th>ENTREPRISE</th><th>COURRIEL / TÉLÉPHONE</th><th>DEMANDES</th><th>DERNIÈRE DEMANDE</th><th></th></tr></thead><tbody id="client-list"></tbody></table></div>
+      </section>
+
       <section class="panel category-panel" id="categories">
         <div class="panel-heading"><div><span class="eyebrow">OFFRE DE SERVICES</span><h2>Types d’agents et tarifs</h2></div><span class="calendar-icon">♟</span></div>
         <p class="category-intro">Ajoutez les services proposés, fixez leur tarif et choisissez ceux qui apparaissent dans le formulaire de réservation.</p>
@@ -66,16 +73,33 @@
         <div class="panel-preview-links"><a id="public-preview-link" href="index.html#demande">Voir le formulaire public ↗</a><a id="client-panel-preview-link" href="client.html">Voir l’aperçu du panel client ↗</a></div>
         <p class="category-footnote">Les tarifs affichés aux clients correspondent à la devise et à l’unité choisies. Le prix final reste à confirmer par l’entreprise.</p>
       </section>
+
+      <section class="panel planning-panel" id="planning">
+        <div class="panel-heading"><div><span class="eyebrow">ORGANISATION DES OPÉRATIONS</span><h2>Planning des demandes</h2></div><span class="calendar-icon">▦</span></div>
+        <p class="planning-intro">Consultez les besoins prévus par date, les heures demandées et l’état de leur coordination.</p>
+        <div class="planning-toolbar"><div class="planning-month-controls"><button type="button" id="planning-prev" aria-label="Mois précédent">‹</button><button type="button" id="planning-today">Aujourd’hui</button><button type="button" id="planning-next" aria-label="Mois suivant">›</button></div><h3 id="planning-month-label"></h3></div>
+        <div class="planning-layout"><div class="calendar-wrap"><div class="calendar-weekdays" aria-hidden="true"><span>Lun</span><span>Mar</span><span>Mer</span><span>Jeu</span><span>Ven</span><span>Sam</span><span>Dim</span></div><div id="planning-calendar" class="planning-calendar" role="grid" aria-label="Calendrier des demandes"></div></div><aside class="planning-day-panel"><div class="planning-day-heading"><span class="eyebrow">JOUR SÉLECTIONNÉ</span><h3 id="planning-day-label"></h3></div><div id="planning-events" class="planning-events" aria-live="polite"></div></aside></div>
+      </section>
+      <section class="panel settings-panel" id="settings">
+        <div class="panel-heading"><div><span class="eyebrow">CONFIGURATION DU COMPTE</span><h2>Profil et paramètres</h2></div><span class="calendar-icon">⚙</span></div>
+        <p class="settings-intro">Mettez à jour le profil administrateur et les coordonnées de l’entreprise utilisées dans l’espace de gestion.</p>
+        <form id="admin-settings-form" class="settings-form">
+          <fieldset><legend>Profil administrateur</legend><div class="settings-grid"><label>Nom affiché<input name="admin_name" required minlength="2" maxlength="120"></label><label>Identifiant de connexion<input id="settings-identifier" name="identifier" readonly aria-describedby="settings-identifier-note"><small id="settings-identifier-note">Cet identifiant sert à se connecter au panel.</small></label></div></fieldset>
+          <fieldset><legend>Informations de l’entreprise</legend><div class="settings-grid"><label>Nom de l’entreprise<input name="company_name" required minlength="2" maxlength="120" placeholder="Ex. Vigie Sécurité"></label><label>Courriel public<input name="public_email" type="email" maxlength="254" placeholder="contact@entreprise.com"></label><label>Téléphone public<input name="public_phone" type="tel" maxlength="30" placeholder="+1 514 555-0100"></label><label>Adresse<input name="address" maxlength="250" placeholder="Adresse, ville, code postal"></label><label>Devise par défaut des nouveaux tarifs<select name="default_currency"><option value="CAD">CAD — dollar canadien</option><option value="USD">USD — dollar américain</option><option value="EUR">EUR — euro</option><option value="XOF">XOF — franc CFA</option><option value="GBP">GBP — livre sterling</option></select></label></div></fieldset>
+          <p id="settings-message" class="settings-message" role="status" hidden></p><div class="settings-actions"><button type="submit" class="action-primary">Enregistrer les paramètres <span>→</span></button></div>
+        </form>
+      </section>
       <footer class="admin-footer"><span>Vigie Sécurité · Panel administrateur</span><span id="environment-label">Serveur local de test · Données stockées sur cet ordinateur</span><a id="admin-footer-public-link" href="index.html">Retour au site public ↗</a></footer>
     </div>
   </main>
 
   <dialog id="request-dialog" class="detail-dialog"><div class="dialog-header"><div><span class="eyebrow">DÉTAIL DE LA DEMANDE</span><h2 id="detail-title">Demande de service</h2></div><button class="close-dialog" data-close aria-label="Fermer">×</button></div><div id="detail-content" class="detail-content"></div><div id="detail-actions" class="detail-actions"></div></dialog>
+  <dialog id="client-detail-dialog" class="detail-dialog client-detail-dialog"><div class="dialog-header"><div><span class="eyebrow">ESPACE CLIENT</span><h2 id="client-detail-title">Fiche client</h2></div><button class="close-dialog" data-close aria-label="Fermer">×</button></div><div id="client-detail-content" class="detail-content"></div></dialog>
   <dialog id="assign-dialog" class="detail-dialog assign-dialog"><div class="dialog-header"><div><span class="eyebrow">COORDINATION</span><h2>Affecter des agents</h2></div><button class="close-dialog" data-close aria-label="Fermer">×</button></div><p class="dialog-copy" id="assign-summary"></p><form id="assign-form"><label>Équipe ou responsable<input name="team" required placeholder="Ex. Équipe événementielle A"></label><label>Note de coordination<textarea name="note" rows="3" placeholder="Consignes, point de rencontre, équipement…"></textarea></label><button class="action-primary" type="submit">Enregistrer la coordination <span>→</span></button></form></dialog>
   <dialog id="reject-dialog" class="detail-dialog reject-dialog"><div class="dialog-header"><div><span class="eyebrow">DÉCISION SUR LA DEMANDE</span><h2>Refuser la demande</h2></div><button class="close-dialog" data-close aria-label="Fermer">×</button></div><p class="dialog-copy" id="reject-summary"></p><form id="reject-form"><label for="rejection-reason">Motif du refus <span>Obligatoire</span><textarea id="rejection-reason" name="reason" rows="4" minlength="5" maxlength="1000" required placeholder="Expliquez pourquoi la demande ne peut pas être acceptée."></textarea></label><p class="reject-hint">Ce motif sera enregistré avec la demande et visible dans l’historique du client.</p><button class="action-danger" type="submit">Confirmer le refus <span>→</span></button></form></dialog>
   <dialog id="invoice-create-dialog" class="detail-dialog invoice-create-dialog"><div class="dialog-header"><div><span class="eyebrow">FACTURE</span><h2>Émettre une facture</h2></div><button class="close-dialog" data-close aria-label="Fermer">×</button></div><p class="dialog-copy" id="invoice-create-summary"></p><form id="invoice-create-form"><label>Description sur la facture<input name="description" required maxlength="180"></label><div class="invoice-input-row"><label>Quantité facturable<input name="quantity" type="number" min="1" max="100000" step="1" required></label><label>Tarif unitaire<input name="unit_price" type="number" min="0" max="1000000" step="0.01" required></label><label>Devise<select name="currency"><option value="CAD">CAD</option><option value="USD">USD</option><option value="EUR">EUR</option><option value="XOF">XOF</option><option value="GBP">GBP</option></select></label></div><p class="invoice-total-preview">Total de la facture <strong id="invoice-total-preview">—</strong></p><p class="reject-hint">Vérifie le tarif et la quantité avant d’émettre cette facture.</p><button class="action-primary invoice-submit" type="submit">Émettre la facture <span>→</span></button></form></dialog>
   <dialog id="invoice-preview-dialog" class="detail-dialog invoice-preview-dialog"><div class="invoice-actions"><button class="action-secondary" data-close>Fermer</button><button id="print-invoice" class="action-primary" type="button">Imprimer / enregistrer en PDF ↗</button></div><article id="invoice-paper" class="invoice-paper"></article></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script src="admin.js?v=20261002-custom-request-approval"></script>
+  <script src="admin.js?v=20261002-settings"></script>
 </body>
 </html>
