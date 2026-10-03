@@ -27,11 +27,15 @@ function showPublicAccount(user){
 const guestChoice=document.querySelector('#guest-choice');
 const choicePanel=document.querySelector('#request-choice');
 const guestForm=document.querySelector('#guest-form');
+const otherNeedWrap=document.querySelector('#other-need-wrap');
+const otherNeedInput=guestForm.elements.otherNeed;
 const guestDate=guestForm.querySelector('[name="date"]');
 const requestMessage=document.querySelector('#form-message');
 let csrfToken='';
 const localToday=new Date();
 guestDate.min=new Date(localToday.getTime()-localToday.getTimezoneOffset()*60000).toISOString().slice(0,10);
+function updateOtherNeed(){const isOther=guestForm.elements.eventType.value==='Autre besoin';otherNeedWrap.hidden=!isOther;otherNeedInput.required=isOther;if(!isOther)otherNeedInput.value=''}
+guestForm.elements.eventType.addEventListener('change',updateOtherNeed);
 const agentCatalogKey='vigie-agent-catalog-v2';
 const defaultAgentCategories=[];
 let availableAgentCategories=[];
@@ -132,6 +136,10 @@ guestForm.addEventListener('submit',async event=>{
     guestForm.elements.contactMethod.focus();
     return;
   }
+  const values=Object.fromEntries(new FormData(guestForm).entries());
+  const otherNeed=String(values.otherNeed||'').trim();
+  if(values.eventType==='Autre besoin'&&otherNeed.length<5){requestMessage.textContent='Expliquez votre autre besoin en au moins quelques mots.';otherNeedInput.focus();return}
+  values.details=[values.eventType==='Autre besoin'?`Autre besoin : ${otherNeed}`:'',String(values.details||'').trim()].filter(Boolean).join('\n\n');
   if(location.protocol==='file:'){
     try{
       const requests=JSON.parse(localStorage.getItem('vigie-local-test-requests-v1')||'[]');
@@ -140,13 +148,12 @@ guestForm.addEventListener('submit',async event=>{
       const session=JSON.parse(localStorage.getItem('vigie-local-test-session-v1')||'null');
       const users=JSON.parse(localStorage.getItem('vigie-local-test-users-v1')||'[]');
       const client=guestForm.dataset.clientUserId?users.find(item=>item.id===guestForm.dataset.clientUserId):null;
-      const values=Object.fromEntries(new FormData(guestForm).entries());
       const activeClient=client||(session?.role==='client'?users.find(item=>item.id===session.id&&item.role==='client'):null);
       const request={id:Date.now(),public_id:`VG-LOCAL-${String(Date.now()).slice(-6)}`,company:values.company.trim(),contact:values.contact.trim(),contact_method:values.contactMethod.trim(),event_type:values.eventType,location:values.location.trim(),agent_type:values.agentType,event_date:values.date,agents:Number(values.agents),billing_duration:Number(values.duration)||1,status:'pending',details:values.details.trim(),client_user_id:activeClient?.id||null,is_guest:!activeClient,created_at:new Date().toISOString(),billing_unit:category?.billing_unit||'hour'};
       requests.unshift(request);localStorage.setItem('vigie-local-test-requests-v1',JSON.stringify(requests));
       if(activeClient)showPublicAccount(activeClient);
       const adminHref=`admin.html?localRequests=${encodeURIComponent(JSON.stringify(requests))}`;
-      message.innerHTML=`Demande ${request.public_id} enregistrée pour le test local.${activeClient?' Elle apparaîtra dans votre historique client.':''} <a href="${adminHref}">Ouvrir le panneau administrateur ↗</a>`;guestForm.reset();guestForm.elements.date.min=new Date().toISOString().slice(0,10);guestForm.elements.agentType.value='';showAgentCategory();
+      message.innerHTML=`Demande ${request.public_id} enregistrée pour le test local.${activeClient?' Elle apparaîtra dans votre historique client.':''} <a href="${adminHref}">Ouvrir le panneau administrateur ↗</a>`;guestForm.reset();updateOtherNeed();guestForm.elements.date.min=new Date().toISOString().slice(0,10);guestForm.elements.agentType.value='';showAgentCategory();
     }catch(error){message.textContent='Impossible d’enregistrer cette demande dans le navigateur. Vérifie que le stockage local est autorisé.'}
     message.scrollIntoView({behavior:'smooth',block:'nearest'});return;
   }
